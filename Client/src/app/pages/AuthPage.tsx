@@ -81,7 +81,7 @@ export function AuthPage() {
           </div>
         </motion.div>
 
-        <motion.div initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} className="rounded-[2rem] border border-border bg-card p-8 shadow-2xl shadow-black/20">
+        <motion.div initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} className="order-first rounded-[2rem] border border-border bg-card p-6 shadow-2xl shadow-black/20 sm:p-8 lg:order-none">
           {challenge ? (
             <OtpStep
               challenge={challenge}
