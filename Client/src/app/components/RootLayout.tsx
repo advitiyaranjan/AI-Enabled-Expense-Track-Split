@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Outlet, NavLink, Navigate, ScrollRestoration } from "react-router";
 import { MobileNav } from "./MobileNav";
 import {
@@ -12,6 +13,8 @@ import {
   WifiOff,
   LoaderCircle,
   LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { useFinance } from "../lib/finance";
 
@@ -70,6 +73,21 @@ function OfflineBanner() {
 
 export function RootLayout() {
   const { profile, isAuthenticated, loading, logout } = useFinance();
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem("sidebar-collapsed") === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("sidebar-collapsed", collapsed ? "1" : "0");
+    } catch {
+      // ignore storage errors
+    }
+  }, [collapsed]);
 
   if (!loading && !isAuthenticated) {
     return <Navigate to="/auth" replace />;
@@ -77,21 +95,37 @@ export function RootLayout() {
 
   return (
     <div className="flex min-h-screen bg-background">
-      <aside className="hidden w-72 border-r border-sidebar-border bg-sidebar lg:flex lg:flex-col">
-        <div className="flex h-full flex-col p-6">
-          <div className="mb-8 flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-secondary-bright">
+      <aside
+        className={`sticky top-0 hidden h-screen shrink-0 border-r border-sidebar-border bg-sidebar transition-[width] duration-200 lg:flex lg:flex-col ${
+          collapsed ? "w-20" : "w-72"
+        }`}
+      >
+        <div className={`flex h-full flex-col overflow-y-auto ${collapsed ? "p-3" : "p-6"}`}>
+          <div className={`mb-8 flex items-center gap-3 ${collapsed ? "flex-col" : ""}`}>
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-secondary-bright">
               <TrendingUp className="h-6 w-6 text-white" />
             </div>
-            <div>
-              <h1 className="text-lg font-semibold">FinanceAI</h1>
-              <p className="text-xs text-muted-foreground">Smart money command center</p>
-            </div>
+            {collapsed ? null : (
+              <div className="min-w-0 flex-1">
+                <h1 className="text-lg font-semibold">FinanceAI</h1>
+                <p className="text-xs text-muted-foreground">Smart money command center</p>
+              </div>
+            )}
+            <button
+              onClick={() => setCollapsed((c) => !c)}
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
+            >
+              {collapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
+            </button>
           </div>
 
-          <div className="mb-6">
-            <BackendIndicator />
-          </div>
+          {collapsed ? null : (
+            <div className="mb-6">
+              <BackendIndicator />
+            </div>
+          )}
 
           <nav className="space-y-1">
             {navItems.map((item) => (
@@ -99,8 +133,9 @@ export function RootLayout() {
                 key={item.path}
                 to={item.path}
                 end={item.path === "/"}
+                title={collapsed ? item.label : undefined}
                 className={({ isActive }) =>
-                  `flex items-center gap-3 rounded-xl px-4 py-3 transition-all ${
+                  `flex items-center gap-3 rounded-xl py-3 transition-all ${collapsed ? "justify-center px-0" : "px-4"} ${
                     isActive
                       ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-lg shadow-primary/20"
                       : "text-sidebar-foreground hover:bg-sidebar-accent"
@@ -109,26 +144,37 @@ export function RootLayout() {
               >
                 {({ isActive }) => (
                   <>
-                    <item.icon className="h-5 w-5" />
-                    <span className="font-medium">{item.label}</span>
-                    {isActive ? <div className="ml-auto h-2 w-2 rounded-full bg-primary-glow" /> : null}
+                    <item.icon className="h-5 w-5 shrink-0" />
+                    {collapsed ? null : <span className="font-medium">{item.label}</span>}
+                    {isActive && !collapsed ? <div className="ml-auto h-2 w-2 rounded-full bg-primary-glow" /> : null}
                   </>
                 )}
               </NavLink>
             ))}
           </nav>
 
-          <div className="mt-auto rounded-2xl border border-border bg-card p-4">
-            <p className="text-sm font-semibold">{profile.displayName}</p>
-            <p className="mt-1 text-xs text-muted-foreground">{profile.email}</p>
+          {collapsed ? (
             <button
               onClick={logout}
-              className="mt-4 inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              title="Sign out"
+              aria-label="Sign out"
+              className="mt-auto flex justify-center rounded-xl py-3 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
-              <LogOut className="h-3.5 w-3.5" />
-              Sign out
+              <LogOut className="h-5 w-5" />
             </button>
-          </div>
+          ) : (
+            <div className="mt-auto rounded-2xl border border-border bg-card p-4">
+              <p className="truncate text-sm font-semibold">{profile.displayName}</p>
+              <p className="mt-1 truncate text-xs text-muted-foreground">{profile.email}</p>
+              <button
+                onClick={logout}
+                className="mt-4 inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                Sign out
+              </button>
+            </div>
+          )}
         </div>
       </aside>
 
