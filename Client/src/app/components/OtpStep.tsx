@@ -3,6 +3,8 @@ import { ArrowLeft, LoaderCircle, MailCheck, RotateCw } from "lucide-react";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "./ui/input-otp";
 import { useFinance, type OtpChallenge } from "../lib/finance";
 
+type VerifyResult = { ok: boolean; error?: string };
+
 function useCountdown(seconds: number) {
   const [left, setLeft] = useState(seconds);
   useEffect(() => setLeft(seconds), [seconds]);
@@ -19,12 +21,18 @@ function formatClock(seconds: number) {
 }
 
 /** Second step of sign-in/sign-up: enter the 6-digit code emailed to the user. */
-export function OtpStep({ challenge, onChallenge, onBack }: {
+export function OtpStep({ challenge, onChallenge, onBack, onVerify, onVerified, description, submitLabel }: {
   challenge: OtpChallenge;
   onChallenge: (challenge: OtpChallenge) => void;
   onBack: () => void;
+  /** Defaults to sign-in/sign-up verification */
+  onVerify?: (challengeId: string, code: string) => Promise<VerifyResult>;
+  onVerified?: () => void;
+  description?: string;
+  submitLabel?: string;
 }) {
   const { verifyOtp, resendOtp } = useFinance();
+  const verify = onVerify ?? verifyOtp;
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -37,11 +45,13 @@ export function OtpStep({ challenge, onChallenge, onBack }: {
     if (value.length !== 6 || verifying) return;
     setVerifying(true);
     setError("");
-    const result = await verifyOtp(challenge.challengeId, value);
+    const result = await verify(challenge.challengeId, value);
     setVerifying(false);
     if (!result.ok) {
       setError(result.error ?? "That code didn't work");
       setCode("");
+    } else {
+      onVerified?.();
     }
     // On success the provider stores the session and the auth page redirects to the dashboard
   }
@@ -76,7 +86,7 @@ export function OtpStep({ challenge, onChallenge, onBack }: {
         <h2 className="text-2xl font-bold">Check your email</h2>
         <p className="mt-2 text-sm text-muted-foreground">
           We sent a 6-digit code to <span className="font-semibold text-foreground">{challenge.email}</span> to{" "}
-          {challenge.purpose === "register" ? "confirm it's really you and finish creating your account" : "confirm it's you signing in"}.
+          {description ?? (challenge.purpose === "register" ? "confirm it's really you and finish creating your account" : "confirm it's you signing in")}.
         </p>
       </div>
 
@@ -123,7 +133,7 @@ export function OtpStep({ challenge, onChallenge, onBack }: {
           className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-4 font-medium text-primary-foreground transition-colors hover:bg-primary-glow disabled:cursor-not-allowed disabled:opacity-50"
         >
           {verifying ? <LoaderCircle className="h-5 w-5 animate-spin" /> : null}
-          {verifying ? "Verifying..." : challenge.purpose === "register" ? "Verify & create account" : "Verify & sign in"}
+          {verifying ? "Verifying..." : submitLabel ?? (challenge.purpose === "register" ? "Verify & create account" : "Verify & sign in")}
         </button>
       </form>
 

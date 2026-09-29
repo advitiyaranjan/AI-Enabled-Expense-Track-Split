@@ -4,6 +4,10 @@ from .. import models, schemas
 from ..database import get_db
 from ..auth import get_password_hash, verify_password, create_access_token, get_current_user
 from ..services import otp_service
+from ..services.email_service import send_email_changed_notice
+import logging
+
+logger = logging.getLogger("financeai.auth")
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -44,7 +48,7 @@ def login(form: schemas.LoginRequest, db: Session = Depends(get_db)):
 
 @router.post("/verify-otp", response_model=schemas.AuthResponse)
 def verify_otp(body: schemas.VerifyOtpRequest, db: Session = Depends(get_db)):
-    challenge = otp_service.verify(db, body.challenge_id, body.code)
+    challenge = otp_service.verify(db, body.challenge_id, body.code, purposes=("register", "login"))
     if challenge.purpose == "register":
         # Someone may have finished signing up with this email while the code was pending
         if db.query(models.User).filter(models.User.email == challenge.email).first():
@@ -85,16 +89,44 @@ def get_me(current_user=Depends(get_current_user)):
 @router.put("/me", response_model=schemas.UserOut)
 def update_me(payload: schemas.UserUpdate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     if payload.email and payload.email != current_user.email:
-        existing = db.query(models.User).filter(models.User.email == payload.email).first()
-        if existing:
-            raise HTTPException(status_code=400, detail="Email already registered")
+        # Email changes must prove ownership of the new address via /auth/change-email
+        raise HTTPException(status_code=400, detail="Email changes need verification. Use the Change email option.")
     for field in ("name", "phone", "location", "country", "currency"):
         value = getattr(payload, field)
         if value is not None:
             setattr(current_user, field, value)
-    if payload.email is not None:
-        current_user.email = payload.email
     db.add(current_user)
     db.commit()
     db.refresh(current_user)
+    return current_user
+
+
+@router.post("/change-email/start", response_model=schemas.OtpChallengeOut)
+def start_email_change(body: schemas.EmailChangeStart, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    """Re-check the password, then send a code to the NEW address to prove the user owns it."""
+    if not verify_password(body.password, current_user.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Current password is incorrect")
+    if body.new_email == current_user.email:
+        raise HTTPException(status_code=400, detail="That's already your email address")
+    if db.query(models.User).filter(models.User.email == body.new_email).first():
+        raise HTTPException(status_code=400, detail="That email is already used by another account")
+    challenge = otp_service.start(db, body.new_email, "change_email", user_id=current_user.id)
+    return otp_service.describe(challenge)
+
+
+@router.post("/change-email/verify", response_model=schemas.UserOut)
+def verify_email_change(body: schemas.VerifyOtpRequest, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    challenge = otp_service.verify(db, body.challenge_id, body.code, purposes=("change_email",), user_id=current_user.id)
+    new_email = challenge.email
+    if db.query(models.User).filter(models.User.email == new_email, models.User.id != current_user.id).first():
+        db.commit()
+        raise HTTPException(status_code=400, detail="That email is already used by another account")
+    old_email = current_user.email
+    current_user.email = new_email
+    db.commit()
+    db.refresh(current_user)
+    try:
+        send_email_changed_notice(old_email, new_email)
+    except Exception:
+        logger.warning("Could not send email-change notice to %s", old_email)
     return current_user

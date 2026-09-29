@@ -55,7 +55,11 @@ def send_email(to: str, subject: str, text: str, html: str | None = None) -> Non
 
 
 def send_otp_email(to: str, code: str, purpose: str, ttl_minutes: int) -> None:
-    action = "finish creating your account" if purpose == "register" else "sign in"
+    action = {
+        "register": "finish creating your account",
+        "login": "sign in",
+        "change_email": "confirm this as your new FinanceAI email address",
+    }.get(purpose, "continue")
     subject = f"{code} is your FinanceAI verification code"
     text = (
         f"Your FinanceAI verification code is {code}.\n\n"
@@ -71,3 +75,13 @@ def send_otp_email(to: str, code: str, purpose: str, ttl_minutes: int) -> None:
   <p style="margin:20px 0 0;color:#475569;font-size:14px">It expires in {ttl_minutes} minutes. If you didn't request this, you can safely ignore this email.</p>
 </div>"""
     send_email(to, subject, text, html)
+
+
+def send_email_changed_notice(old_email: str, new_email: str) -> None:
+    send_email(
+        old_email,
+        "Your FinanceAI email address was changed",
+        f"The email address on your FinanceAI account was changed from {old_email} to {new_email}.\n\n"
+        "If you made this change, no action is needed. If you didn't, reply to this email or contact support right away "
+        "and change your password.",
+    )

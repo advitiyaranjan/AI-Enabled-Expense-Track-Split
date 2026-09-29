@@ -119,3 +119,61 @@ def test_production_without_email_config_refuses(monkeypatch):
     monkeypatch.setattr(email_service, "IS_SERVERLESS", True)
     with pytest.raises(email_service.EmailNotConfigured):
         email_service.send_email("a@example.com", "s", "t")
+
+
+def signed_up(outbox, email, password="pw123456"):
+    c = start_register(email, password)
+    body = verify(c["challenge_id"], outbox.last_code(email)).json()
+    return {"Authorization": f"Bearer {body['access_token']}"}
+
+
+def test_email_change_requires_code_sent_to_new_address(outbox, monkeypatch):
+    from app.routes import auth as auth_routes
+
+    notices = []
+    monkeypatch.setattr(auth_routes, "send_email_changed_notice", lambda old, new: notices.append((old, new)))
+    h = signed_up(outbox, "old@example.com")
+
+    # Direct edits through the profile endpoint are refused
+    assert client.put("/auth/me", json={"email": "sneaky@example.com"}, headers=h).status_code == 400
+
+    r = client.post("/auth/change-email/start", json={"new_email": "Changed@Example.com", "password": "pw123456"}, headers=h)
+    assert r.status_code == 200 and r.json()["email"] == "changed@example.com" and r.json()["purpose"] == "change_email"
+    assert outbox[-1][0] == "changed@example.com"  # the code goes to the NEW address
+    # Email is unchanged until the code is confirmed
+    assert client.get("/auth/me", headers=h).json()["email"] == "old@example.com"
+
+    done = client.post("/auth/change-email/verify", json={"challenge_id": r.json()["challenge_id"], "code": outbox.last_code("changed@example.com")}, headers=h)
+    assert done.status_code == 200 and done.json()["email"] == "changed@example.com"
+    assert notices == [("old@example.com", "changed@example.com")]
+    # The account now signs in with the new address only
+    assert client.post("/auth/login", json={"email": "old@example.com", "password": "pw123456"}).status_code == 401
+    assert client.post("/auth/login", json={"email": "changed@example.com", "password": "pw123456"}).status_code == 200
+
+
+def test_email_change_rejects_wrong_password_and_taken_email(outbox):
+    h = signed_up(outbox, "owner2@example.com")
+    signed_up(outbox, "taken@example.com")
+    assert client.post("/auth/change-email/start", json={"new_email": "fresh@example.com", "password": "nope-nope"}, headers=h).status_code == 401
+    r = client.post("/auth/change-email/start", json={"new_email": "taken@example.com", "password": "pw123456"}, headers=h)
+    assert r.status_code == 400 and "already used" in r.json()["detail"]
+    assert client.post("/auth/change-email/start", json={"new_email": "owner2@example.com", "password": "pw123456"}, headers=h).status_code == 400
+
+
+def test_email_change_code_cannot_be_used_elsewhere(outbox):
+    alice = signed_up(outbox, "alice@example.com")
+    mallory = signed_up(outbox, "mallory@example.com")
+    c = client.post("/auth/change-email/start", json={"new_email": "alice-new@example.com", "password": "pw123456"}, headers=alice).json()
+    code = outbox.last_code("alice-new@example.com")
+    # Another user can't redeem Alice's change code, and it can't be used as a login code
+    assert client.post("/auth/change-email/verify", json={"challenge_id": c["challenge_id"], "code": code}, headers=mallory).status_code == 400
+    assert verify(c["challenge_id"], code).status_code == 400
+    # ...and those rejections didn't burn it for Alice
+    assert client.post("/auth/change-email/verify", json={"challenge_id": c["challenge_id"], "code": code}, headers=alice).status_code == 200
+
+
+def test_login_code_cannot_change_email(outbox):
+    h = signed_up(outbox, "bob@example.com")
+    login = client.post("/auth/login", json={"email": "bob@example.com", "password": "pw123456"}).json()
+    r = client.post("/auth/change-email/verify", json={"challenge_id": login["challenge_id"], "code": outbox.last_code("bob@example.com")}, headers=h)
+    assert r.status_code == 400

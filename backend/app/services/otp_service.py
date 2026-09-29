@@ -109,8 +109,11 @@ def resend(db: Session, challenge_id: str) -> models.EmailOTP:
     return challenge
 
 
-def verify(db: Session, challenge_id: str, code: str) -> models.EmailOTP:
+def verify(db: Session, challenge_id: str, code: str, purposes: tuple[str, ...], user_id: int | None = None) -> models.EmailOTP:
     challenge = _active(db, challenge_id)
+    # A code issued for one flow (or one user) must never unlock another; treat mismatches as unknown challenges
+    if challenge.purpose not in purposes or (user_id is not None and challenge.user_id != user_id):
+        raise HTTPException(status_code=400, detail="This code is no longer valid. Please start again.")
     if not hmac.compare_digest(challenge.code_hash, _hash(challenge.id, code.strip())):
         challenge.attempts += 1
         left = settings.OTP_MAX_ATTEMPTS - challenge.attempts

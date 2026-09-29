@@ -53,6 +53,19 @@ class VerifyOtpRequest(BaseModel):
     code: str = Field(..., pattern=r"^\s*\d{6}\s*$")
 
 
+class EmailChangeStart(BaseModel):
+    new_email: str
+    password: str = Field(..., min_length=1, max_length=128)
+
+    @field_validator("new_email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        value = value.strip().lower()
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value):
+            raise ValueError("Invalid email address")
+        return value
+
+
 class ResendOtpRequest(BaseModel):
     challenge_id: str = Field(..., min_length=10, max_length=64)
 

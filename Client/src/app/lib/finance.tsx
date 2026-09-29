@@ -212,6 +212,8 @@ interface FinanceContextValue {
   register: (payload: UserCredentials) => Promise<Result<OtpChallenge>>;
   verifyOtp: (challengeId: string, code: string) => Promise<Result>;
   resendOtp: (challengeId: string) => Promise<Result<OtpChallenge>>;
+  startEmailChange: (newEmail: string, password: string) => Promise<Result<OtpChallenge>>;
+  confirmEmailChange: (challengeId: string, code: string) => Promise<Result>;
   logout: () => void;
   reconnect: () => Promise<void>;
   refreshRemoteData: () => Promise<void>;
@@ -822,6 +824,33 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  /** Email changes are verified: password re-check, then a code sent to the new address. */
+  async function startEmailChange(newEmail: string, password: string): Promise<Result<OtpChallenge>> {
+    if (!connected) return { ok: false, error: "Changing your email needs a connection to the server." };
+    try {
+      const response = await fetchJson<RemoteChallenge>(
+        "/auth/change-email/start",
+        { method: "POST", body: JSON.stringify({ new_email: newEmail.trim(), password }) },
+        token,
+      );
+      return { ok: true, data: toChallenge(response) };
+    } catch (error) {
+      // A wrong *current password* is a 401 here, not an expired session, so don't sign out
+      return { ok: false, error: errorMessage(error, "Unable to start the email change") };
+    }
+  }
+
+  async function confirmEmailChange(challengeId: string, code: string): Promise<Result> {
+    try {
+      const user = await fetchJson<RemoteUser>("/auth/change-email/verify", { method: "POST", body: JSON.stringify({ challenge_id: challengeId, code }) }, token);
+      applyRemoteUser(user);
+      return { ok: true };
+    } catch (error) {
+      if (handleAuthError(error)) return { ok: false, error: "Your session expired. Please sign in again." };
+      return { ok: false, error: errorMessage(error, "Unable to verify the code") };
+    }
+  }
+
   async function resendOtp(challengeId: string): Promise<Result<OtpChallenge>> {
     return startAuth("/auth/resend-otp", { challenge_id: challengeId }, "Unable to resend the code");
   }
@@ -1118,7 +1147,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           method: "PUT",
           body: JSON.stringify({
             name: nextProfile.displayName,
-            email: nextProfile.email,
+            email: profile.email,
             phone: nextProfile.phone,
             location: nextProfile.location,
             country: nextProfile.country,
@@ -1208,6 +1237,8 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         register,
         verifyOtp,
         resendOtp,
+        startEmailChange,
+        confirmEmailChange,
         logout,
         reconnect,
         refreshRemoteData,

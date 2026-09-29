@@ -14,6 +14,7 @@ import {
   Upload,
 } from "lucide-react";
 import { motion } from "motion/react";
+import { ChangeEmailDialog } from "../components/ChangeEmailDialog";
 import { HealthScoreCard } from "../components/HealthScoreCard";
 import { toCSV, todayISO } from "../lib/analytics";
 import { COUNTRIES, getAccountStats, getCountryConfig, useFinance } from "../lib/finance";
@@ -31,6 +32,7 @@ export function Profile() {
   const [draft, setDraft] = useState(accountFields);
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [changingEmail, setChangingEmail] = useState(false);
 
   // Re-sync the form only when the saved account data changes, so toggling a preference doesn't wipe unsaved edits
   useEffect(() => {
@@ -41,7 +43,6 @@ export function Profile() {
 
   async function handleSave() {
     if (!draft.displayName.trim()) return setMessage({ tone: "error", text: "Display name can't be empty." });
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(draft.email)) return setMessage({ tone: "error", text: "Enter a valid email address." });
     setSaving(true);
     const result = await updateProfile(draft);
     setSaving(false);
@@ -162,10 +163,16 @@ export function Profile() {
                 <input type="text" value={draft.displayName} onChange={(event) => setDraft({ ...draft, displayName: event.target.value })} className="rounded-2xl border border-border bg-input-background px-4 py-3 outline-none transition-colors focus:border-primary" />
               </label>
 
-              <label className="grid gap-2">
+              <div className="grid gap-2">
                 <span className="text-sm text-muted-foreground">Email</span>
-                <input type="email" value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} className="rounded-2xl border border-border bg-input-background px-4 py-3 outline-none transition-colors focus:border-primary" />
-              </label>
+                <div className="flex gap-2">
+                  <input type="email" value={profile.email} readOnly aria-label="Email" className="min-w-0 flex-1 rounded-2xl border border-border bg-muted/40 px-4 py-3 text-muted-foreground outline-none" />
+                  <button type="button" onClick={() => setChangingEmail(true)} className="rounded-2xl border border-border px-4 py-3 text-sm font-medium transition-colors hover:border-primary hover:text-primary">
+                    Change
+                  </button>
+                </div>
+                <span className="text-xs text-muted-foreground">Changing your email requires your password and a code sent to the new address.</span>
+              </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="grid gap-2">
@@ -261,6 +268,11 @@ export function Profile() {
           </button>
         </div>
       </motion.div>
+      <ChangeEmailDialog
+        open={changingEmail}
+        onClose={() => setChangingEmail(false)}
+        onChanged={(email) => setMessage({ tone: "ok", text: `Email updated to ${email}. A notice was sent to your old address.` })}
+      />
     </div>
   );
 }
