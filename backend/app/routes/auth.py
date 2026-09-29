@@ -12,14 +12,15 @@ def register(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
     existing = db.query(models.User).filter(models.User.email == user_in.email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
+    country = user_in.country or "India"
     user = models.User(
         name=user_in.name,
         email=user_in.email,
         password_hash=get_password_hash(user_in.password),
         phone=user_in.phone,
         location=user_in.location,
-        country=user_in.country or "United States",
-        currency=user_in.currency or "USD",
+        country=country,
+        currency=user_in.currency or ("INR" if country == "India" else "USD"),
     )
     db.add(user)
     db.commit()

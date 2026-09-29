@@ -60,3 +60,10 @@ def test_groups_require_membership():
 def test_bad_token_is_401_not_500():
     r = client.get("/auth/me", headers={"Authorization": "Bearer not-a-token"})
     assert r.status_code == 401
+
+
+def test_registration_defaults_to_india():
+    r = client.post("/auth/register", json={"name": "Default", "email": "default-country@example.com", "password": "pw123456"})
+    assert r.status_code == 200
+    assert r.json()["user"]["country"] == "India"
+    assert r.json()["user"]["currency"] == "INR"

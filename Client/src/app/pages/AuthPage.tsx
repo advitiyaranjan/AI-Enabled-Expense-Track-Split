@@ -15,7 +15,7 @@ export function AuthPage() {
     password: "",
     phone: "",
     location: "",
-    country: "United States",
+    country: "India",
   });
 
   if (!loading && isAuthenticated) {

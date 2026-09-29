@@ -12,8 +12,8 @@ class User(Base):
     password_hash = Column(String, nullable=False)
     phone = Column(String, nullable=True)
     location = Column(String, nullable=True)
-    country = Column(String, nullable=False, default="United States")
-    currency = Column(String, nullable=False, default="USD")
+    country = Column(String, nullable=False, default="India")
+    currency = Column(String, nullable=False, default="INR")
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
