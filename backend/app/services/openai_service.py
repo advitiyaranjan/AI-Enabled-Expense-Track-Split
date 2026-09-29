@@ -15,13 +15,22 @@ logger = logging.getLogger("financeai.ai")
 
 EMPTY_RECEIPT = {"amount": None, "date": None, "merchant": None, "category": None, "items": []}
 
-# Best first. OPENAI_MODEL (comma-separated) is tried before these; the first model the key can use wins.
-DEFAULT_MODEL_CHAIN = ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna", "gpt-5", "gpt-4.1", "gpt-4o-mini"]
+# Two tiers, cheapest model that does the job well first. Astra (the top, most expensive model)
+# is deliberately not used. Env overrides: OPENAI_MODEL_FAST / OPENAI_MODEL (comma-separated, best first).
+#   fast  -> extraction: quick add, split fill, receipts (text + photos)
+#   smart -> the finance assistant chat, which reasons over the user's whole snapshot
+TIER_DEFAULTS = {
+    "fast": ["gpt-6-luna", "gpt-5-mini", "gpt-4o-mini"],
+    "smart": ["gpt-6.1-sol", "gpt-6-luna", "gpt-5", "gpt-4o-mini"],
+}
 REASONING_PREFIXES = ("gpt-5", "gpt-6", "o1", "o3", "o4")
+# Only some models accept reasoning_effort "none"; others get their lowest supported level
+NONE_EFFORT_MODELS = ("gpt-6-luna",)
 # Reasoning tokens count against max_completion_tokens, so leave room beyond the visible answer
-REASONING_HEADROOM = {"low": 3000, "medium": 8000, "high": 16000}
+REASONING_HEADROOM = {"none": 500, "low": 3000, "medium": 8000, "high": 16000}
 
-_model_state: dict = {"model": None, "checked": False, "error": None}
+_model_state: dict = {tier: {"model": None, "checked": False} for tier in TIER_DEFAULTS}
+_account: dict = {"error": None}  # account-wide problems (bad key, no credits) shared by both tiers
 
 
 def ai_enabled() -> bool:
@@ -31,63 +40,70 @@ def ai_enabled() -> bool:
 def get_client():
     if not ai_enabled():
         return None
-    # Reasoning models can take a while on images and longer chats
-    return OpenAI(api_key=settings.OPENAI_API_KEY, timeout=90, max_retries=1)
+    return OpenAI(api_key=settings.OPENAI_API_KEY, timeout=90, max_retries=2)
 
 
-def model_chain() -> list[str]:
-    configured = [m.strip() for m in settings.OPENAI_MODEL.split(",") if m.strip()]
-    return configured + [m for m in DEFAULT_MODEL_CHAIN if m not in configured]
+def model_chain(tier: str = "fast") -> list[str]:
+    configured_value = settings.OPENAI_MODEL_FAST if tier == "fast" else settings.OPENAI_MODEL
+    configured = [m.strip() for m in configured_value.split(",") if m.strip()]
+    return configured + [m for m in TIER_DEFAULTS[tier] if m not in configured]
 
 
 def is_reasoning_model(model: str) -> bool:
     return model.startswith(REASONING_PREFIXES)
 
 
-def resolve_model() -> str | None:
-    """Pick the best model this API key can actually use (cached per server instance)."""
-    if _model_state["checked"]:
-        return _model_state["model"]
+def resolve_model(tier: str = "fast") -> str | None:
+    """Pick the first model in the tier's chain that this API key can use (cached per server instance)."""
+    state = _model_state[tier]
+    if state["checked"]:
+        return state["model"]
     client = get_client()
     if client is None:
         return None
-    for model in model_chain():
+    for model in model_chain(tier):
         try:
             client.models.retrieve(model)
-            _model_state.update(model=model, checked=True, error=None)
-            logger.info("Using OpenAI model %s", model)
+            state.update(model=model, checked=True)
+            logger.info("Using OpenAI model %s for %s tasks", model, tier)
             return model
         except (NotFoundError, PermissionDeniedError):
-            continue  # not available to this key (e.g. limited rollout): try the next best
+            continue
         except AuthenticationError:
-            _model_state.update(model=None, checked=True, error="invalid_api_key")
+            _account["error"] = "invalid_api_key"
+            state.update(model=None, checked=True)
             logger.error("OpenAI rejected the API key")
             return None
         except Exception as exc:  # network hiccup: don't cache, try again on the next request
-            _model_state["error"] = type(exc).__name__
             logger.warning("Could not reach OpenAI to check model %s: %s", model, exc)
             return None
-    _model_state.update(model=None, checked=True, error="no_model_available")
+    state.update(model=None, checked=True)
     return None
+
+
+def last_error() -> str | None:
+    return _account["error"]
 
 
 def ai_status() -> dict:
     if not ai_enabled():
-        return {"enabled": False, "model": None, "ready": False, "error": "no_api_key"}
-    model = resolve_model()
+        return {"enabled": False, "model": None, "models": {}, "ready": False, "error": "no_api_key"}
+    models = {tier: resolve_model(tier) for tier in TIER_DEFAULTS}
     # A key with no credits resolves models fine but every request is refused
-    ready = model is not None and _model_state["error"] != "insufficient_quota"
-    return {"enabled": True, "model": model, "ready": ready, "error": _model_state["error"]}
+    ready = any(models.values()) and _account["error"] not in ("insufficient_quota", "invalid_api_key")
+    return {"enabled": True, "model": models["smart"] or models["fast"], "models": models, "ready": ready, "error": _account["error"]}
 
 
-def complete(messages: list[dict], *, effort: str = "low", max_output: int = 800, json_mode: bool = False, temperature: float = 0) -> str | None:
+def complete(messages: list[dict], *, tier: str = "fast", effort: str = "low", max_output: int = 800, json_mode: bool = False, temperature: float = 0) -> str | None:
     """One chat completion that works across model generations. Returns None if AI is unavailable or fails."""
     client = get_client()
-    model = resolve_model() if client else None
+    model = resolve_model(tier) if client else None
     if client is None or model is None:
         return None
     kwargs: dict = {"model": model, "messages": messages}
     if is_reasoning_model(model):
+        if effort == "none" and not model.startswith(NONE_EFFORT_MODELS):
+            effort = "low"
         # Reasoning models reject temperature and cap output (including hidden reasoning) with max_completion_tokens
         kwargs["reasoning_effort"] = effort
         kwargs["max_completion_tokens"] = max_output + REASONING_HEADROOM.get(effort, 3000)
@@ -97,15 +113,23 @@ def complete(messages: list[dict], *, effort: str = "low", max_output: int = 800
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
 
-    for _ in range(4):
+    for _ in range(5):
         try:
             response = client.chat.completions.create(**kwargs)
-            _model_state["error"] = None  # e.g. credits were topped up
-            return response.choices[0].message.content or ""
+            _account["error"] = None  # e.g. credits were topped up
+            choice = response.choices[0]
+            content = choice.message.content or ""
+            if not content and getattr(choice, "finish_reason", None) == "length" and "max_completion_tokens" in kwargs:
+                # Reasoning used up the budget before any answer: retry once with more room
+                kwargs["max_completion_tokens"] *= 2
+                continue
+            return content
         except BadRequestError as exc:
             # Adapt to parameters a particular model doesn't support, then retry
             message = str(exc)
-            if "reasoning_effort" in message and "reasoning_effort" in kwargs:
+            if "reasoning_effort" in message and kwargs.get("reasoning_effort") == "none":
+                kwargs["reasoning_effort"] = "low"
+            elif "reasoning_effort" in message and "reasoning_effort" in kwargs:
                 kwargs.pop("reasoning_effort")
             elif "temperature" in message and "temperature" in kwargs:
                 kwargs.pop("temperature")
@@ -120,25 +144,27 @@ def complete(messages: list[dict], *, effort: str = "low", max_output: int = 800
                 return None
         except RateLimitError as exc:
             if "insufficient_quota" in str(exc) or "credit" in str(exc):
-                _model_state["error"] = "insufficient_quota"
+                _account["error"] = "insufficient_quota"
                 logger.error("OpenAI account has no credits; using the rules engine until billing is topped up")
             else:
+                _account["error"] = "rate_limited"
                 logger.warning("OpenAI rate limit for %s: %s", model, exc)
             return None
         except (NotFoundError, PermissionDeniedError) as exc:
             # Access to the model changed since we resolved it: re-resolve on the next request
             logger.warning("Model %s became unavailable: %s", model, exc)
-            _model_state.update(model=None, checked=False)
+            _model_state[tier].update(model=None, checked=False)
             return None
         except Exception as exc:
+            _account["error"] = "unreachable"
             logger.warning("OpenAI request failed for %s: %s", model, exc)
             return None
     return None
 
 
-def chat_json(messages: list[dict], max_tokens: int = 800, effort: str = "low") -> dict | None:
+def chat_json(messages: list[dict], max_tokens: int = 800, effort: str = "none", tier: str = "fast") -> dict | None:
     """Run a completion that must return a JSON object. Returns None on any failure."""
-    content = complete(messages, effort=effort, max_output=max_tokens, json_mode=True)
+    content = complete(messages, tier=tier, effort=effort, max_output=max_tokens, json_mode=True)
     if not content:
         return None
     try:
@@ -304,7 +330,7 @@ def parse_receipt_image(image_bytes: bytes, filename: str = "receipt.jpg") -> di
             {"type": "text", "text": "Here is the receipt photo."},
             {"type": "image_url", "image_url": {"url": data_url, "detail": "high"}},
         ]},
-    ], max_tokens=1500)
+    ], max_tokens=1500, effort="low")
     if parsed is None:
         return None
     result = normalize_receipt(parsed)

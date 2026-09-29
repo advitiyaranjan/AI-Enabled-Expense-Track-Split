@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta
 
 from . import analytics
 from .categorize import EXPENSE_CATEGORIES, detect_category, looks_like_income
-from .openai_service import ai_enabled, chat_json, complete
+from .openai_service import ai_enabled, chat_json, complete, last_error
 from ..config import settings
 
 ALL_CATEGORIES = EXPENSE_CATEGORIES + ["Income"]
@@ -356,10 +356,17 @@ def chat(message: str, history: list[dict], ctx: dict) -> dict:
             if turn.get("role") in ("user", "assistant") and turn.get("content"):
                 messages.append({"role": turn["role"], "content": str(turn["content"])[:2000]})
         messages.append({"role": "user", "content": message})
-        # Medium effort: the assistant reasons over the whole financial snapshot
-        reply = (complete(messages, effort="medium", max_output=700, temperature=0.3) or "").strip()
+        reply = (complete(messages, tier="smart", effort="low", max_output=700, temperature=0.3) or "").strip()
         if reply:
             return {"reply": reply, "source": "ai", "suggestions": SUGGESTIONS}
+        # OpenAI is configured but couldn't answer: say why rather than silently switching engines
+        reason = {
+            "insufficient_quota": "the OpenAI account is out of credits",
+            "invalid_api_key": "the OpenAI API key was rejected",
+            "rate_limited": "OpenAI is rate-limiting requests right now",
+        }.get(last_error() or "", "OpenAI didn't respond in time")
+        return {"reply": rules_reply(message, ctx), "source": "rules", "suggestions": SUGGESTIONS,
+                "notice": f"AI unavailable ({reason}). This answer came from the built-in rules."}
     return {"reply": rules_reply(message, ctx), "source": "rules", "suggestions": SUGGESTIONS}
 
 

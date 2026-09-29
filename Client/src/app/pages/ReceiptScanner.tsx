@@ -12,9 +12,9 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { EXPENSE_CATEGORIES, todayISO } from "../lib/analytics";
+import { MAX_SOURCE_BYTES, prepareImageForUpload } from "../lib/image";
 import { categoryIcon, useFinance } from "../lib/finance";
 
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const SOURCE_LABEL: Record<string, string> = {
   vision: "Read by the AI vision model",
   ocr: "Read with OCR + parsing",
@@ -23,15 +23,6 @@ const SOURCE_LABEL: Record<string, string> = {
 };
 
 type ScanStage = "idle" | "processing" | "preview";
-
-function readFileAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error("Unable to read file"));
-    reader.readAsDataURL(file);
-  });
-}
 
 export function ReceiptScanner() {
   const navigate = useNavigate();
@@ -46,20 +37,23 @@ export function ReceiptScanner() {
 
   async function handleSelectedFile(file: File) {
     setErrorMessage("");
-    if (!file.type.startsWith("image/")) {
-      setErrorMessage("Please choose an image file (JPG, PNG, WebP).");
+    // Some browsers report iPhone HEIC photos with an empty type, so fall back to the extension
+    const looksLikeImage = file.type.startsWith("image/") || /\.(jpe?g|png|webp|gif|heic|heif)$/i.test(file.name);
+    if (!looksLikeImage) {
+      setErrorMessage("Please choose an image file (JPG, PNG, WebP, HEIC).");
       return;
     }
-    if (file.size > MAX_IMAGE_BYTES) {
-      setErrorMessage("That image is over 8 MB. Try a smaller photo or a screenshot.");
+    if (file.size > MAX_SOURCE_BYTES) {
+      setErrorMessage("That photo is over 20 MB. Please choose a smaller one.");
       return;
     }
     setStage("processing");
 
     try {
-      const imageBase64 = await readFileAsDataUrl(file);
+      // Large photos are shrunk in the browser so they fit the server's upload limit
+      const { dataUrl: imageBase64, filename } = await prepareImageForUpload(file);
       setPreview(imageBase64);
-      const result = await scanReceipt({ filename: file.name, imageBase64, rawText });
+      const result = await scanReceipt({ filename, imageBase64, rawText });
       if (result.data) {
         setDraft(result.data);
         setStage("preview");
@@ -174,7 +168,7 @@ export function ReceiptScanner() {
                 </div>
                 <div>
                   <h2 className="text-xl font-semibold">Upload receipt image</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">Click or drop a JPG, PNG, or screenshot of a bill (max 8 MB).</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Click or drop a photo or screenshot of a bill (up to 20 MB).</p>
                 </div>
               </div>
             </button>
@@ -182,7 +176,7 @@ export function ReceiptScanner() {
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="image/*,.heic,.heif"
               className="hidden"
               onChange={(event) => {
                 const file = event.target.files?.[0];

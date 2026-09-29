@@ -8,7 +8,7 @@ from .. import models, schemas
 
 router = APIRouter(prefix="/receipts", tags=["receipts"])
 
-MAX_IMAGE_BYTES = 8 * 1024 * 1024
+MAX_IMAGE_BYTES = 20 * 1024 * 1024
 
 
 def decode_image(image_base64: str | None) -> bytes:
@@ -35,7 +35,7 @@ def scan_receipt(
 
     if contents:
         if len(contents) > MAX_IMAGE_BYTES:
-            raise HTTPException(status_code=413, detail="Receipt image is too large (max 8 MB)")
+            raise HTTPException(status_code=413, detail="Receipt image is too large (max 20 MB)")
         url = s3_service.upload_bytes(contents, filename)
         if not raw_text:
             # Vision model reads the photo directly; OCR is the offline fallback

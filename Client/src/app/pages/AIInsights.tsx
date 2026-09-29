@@ -43,15 +43,18 @@ export function AIInsights() {
   const { insights, transactions, profile, formatMoney, askAssistant, aiEnabled, aiModel, backendStatus } = useFinance();
   const chart = useChartTheme();
   const [scope, setScope] = useState<"month" | "all">("month");
-  const [chat, setChat] = useState<Array<ChatTurn & { source?: string }>>([
+  const [chat, setChat] = useState<Array<ChatTurn & { source?: string; notice?: string }>>([
     { role: "assistant", content: "Hi! I can see your transactions, budgets, and recurring bills. Ask me anything about your money." },
   ]);
   const [inputMessage, setInputMessage] = useState("");
   const [thinking, setThinking] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const chatBoxRef = useRef<HTMLDivElement | null>(null);
 
+  // Keep the newest message in view by scrolling only the chat box, never the page, and not on first load
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    if (chat.length <= 1 && !thinking) return;
+    const box = chatBoxRef.current;
+    if (box) box.scrollTo({ top: box.scrollHeight, behavior: "smooth" });
   }, [chat, thinking]);
 
   const pace = getMonthPace(transactions);
@@ -96,7 +99,7 @@ export function AIInsights() {
     setInputMessage("");
     setThinking(true);
     const response = await askAssistant(message, history);
-    setChat((current) => [...current, { role: "assistant", content: response.reply, source: response.source }]);
+    setChat((current) => [...current, { role: "assistant", content: response.reply, source: response.source, notice: response.notice }]);
     setThinking(false);
   }
 
@@ -113,7 +116,7 @@ export function AIInsights() {
           </div>
         </div>
         <span className={`rounded-full px-3 py-1 text-xs font-medium ${aiEnabled ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
-          {backendStatus !== "connected" ? "Offline analysis" : aiEnabled ? `AI · ${aiModel ?? "connected"}` : "Smart rules engine (add OPENAI_API_KEY for full AI)"}
+          {backendStatus !== "connected" ? "Offline analysis" : aiEnabled ? `AI · ${aiModel ?? "connected"}` : "Smart rules engine (OpenAI unavailable)"}
         </span>
       </motion.div>
 
@@ -395,7 +398,7 @@ export function AIInsights() {
           <h2 className="text-xl font-semibold">Ask the assistant</h2>
         </div>
 
-        <div className="mb-4 max-h-[28rem] space-y-4 overflow-y-auto pr-1" aria-live="polite">
+        <div ref={chatBoxRef} className="mb-4 max-h-[28rem] space-y-4 overflow-y-auto pr-1" aria-live="polite">
           {chat.map((message, index) => (
             <div key={index} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
               <div className={`max-w-[85%] rounded-3xl p-4 ${message.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
@@ -407,6 +410,7 @@ export function AIInsights() {
                   </div>
                 ) : null}
                 <p className="whitespace-pre-line text-sm">{message.content}</p>
+                {message.notice ? <p className="mt-2 border-t border-border pt-2 text-xs text-muted-foreground">{message.notice}</p> : null}
               </div>
             </div>
           ))}
@@ -417,7 +421,6 @@ export function AIInsights() {
               </div>
             </div>
           ) : null}
-          <div ref={chatEndRef} />
         </div>
 
         <div className="mb-3 flex flex-wrap gap-2">

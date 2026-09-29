@@ -230,7 +230,7 @@ interface FinanceContextValue {
   toggleSettlement: (groupId: string, participantId: string) => void;
   addFriend: (name: string, extra?: Pick<Friend, "publicId" | "upiId">) => Friend | null;
   updateProfile: (updates: Partial<ProfileData>) => Promise<Result>;
-  askAssistant: (message: string, history: ChatTurn[]) => Promise<{ reply: string; source: "ai" | "rules" | "local" }>;
+  askAssistant: (message: string, history: ChatTurn[]) => Promise<{ reply: string; source: "ai" | "rules" | "local"; notice?: string }>;
   parseQuickAdd: (text: string) => Promise<Result<QuickAddDraft>>;
   login: (payload: UserCredentials) => Promise<Result<OtpChallenge>>;
   register: (payload: UserCredentials) => Promise<Result<OtpChallenge>>;
@@ -615,6 +615,7 @@ async function fetchJson<T>(path: string, options?: RequestInit, token?: string)
     } catch {
       // not JSON; keep the raw text
     }
+    if (response.status === 413) message = "That file is too large to upload. Try a smaller photo or a screenshot.";
     throw new ApiError(message, response.status);
   }
   return (await response.json()) as T;
@@ -1288,7 +1289,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   async function askAssistant(message: string, history: ChatTurn[]) {
     if (connected) {
       try {
-        const response = await fetchJson<{ reply: string; source: "ai" | "rules" }>(
+        const response = await fetchJson<{ reply: string; source: "ai" | "rules"; notice?: string }>(
           `/ai/chat?today=${todayISO()}`,
           {
             method: "POST",

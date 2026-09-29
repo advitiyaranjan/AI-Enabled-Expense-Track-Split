@@ -28,7 +28,7 @@ def merchant_category_history(txs: list[dict]) -> dict[str, str]:
 @router.get("/status")
 def ai_status(current_user=Depends(get_current_user)):
     status = openai_ai_status()
-    return {"ai_enabled": status["ready"], "model": status["model"], "suggestions": ai_service.SUGGESTIONS}
+    return {"ai_enabled": status["ready"], "model": status["model"], "models": status.get("models", {}), "error": status["error"], "suggestions": ai_service.SUGGESTIONS}
 
 
 @router.post("/parse-transaction")
