@@ -1,3 +1,4 @@
+import secrets
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from .. import models, schemas
@@ -7,7 +8,7 @@ from ..auth import get_password_hash, verify_password, create_access_token, get_
 from ..services import otp_service
 from ..services.google_auth import GoogleTokenError, google_enabled, verify_google_credential
 from ..services.user_ids import new_public_id
-from ..services.email_service import send_email_changed_notice
+from ..services.email_service import send_email_changed_notice, send_password_changed_notice
 import logging
 
 logger = logging.getLogger("financeai.auth")
@@ -166,3 +167,53 @@ def verify_email_change(body: schemas.VerifyOtpRequest, db: Session = Depends(ge
     except Exception:
         logger.warning("Could not send email-change notice to %s", old_email)
     return current_user
+
+
+def _notify_password_changed(email: str) -> None:
+    try:
+        send_password_changed_notice(email)
+    except Exception:
+        logger.warning("Could not send password-change notice to %s", email)
+
+
+@router.post("/forgot-password/start", response_model=schemas.OtpChallengeOut)
+def start_password_reset(body: schemas.ForgotPasswordStart, db: Session = Depends(get_db)):
+    """Email a reset code. Responds the same whether or not the account exists, so emails can't be probed."""
+    user = db.query(models.User).filter(models.User.email == body.email).first()
+    if user is None:
+        return {
+            "otp_required": True, "challenge_id": secrets.token_urlsafe(24), "email": body.email, "purpose": "reset_password",
+            "expires_in": settings.OTP_TTL_MINUTES * 60, "resend_in": settings.OTP_RESEND_COOLDOWN_SECONDS, "attempts_left": settings.OTP_MAX_ATTEMPTS,
+        }
+    challenge = otp_service.start(db, user.email, "reset_password", user_id=user.id)
+    return otp_service.describe(challenge)
+
+
+@router.post("/forgot-password/verify", response_model=schemas.AuthResponse)
+def complete_password_reset(body: schemas.PasswordOtpVerify, db: Session = Depends(get_db)):
+    challenge = otp_service.verify(db, body.challenge_id, body.code, purposes=("reset_password",))
+    user = db.query(models.User).filter(models.User.id == challenge.user_id).first()
+    if user is None:
+        db.commit()
+        raise HTTPException(status_code=400, detail="Account not found. Please sign up.")
+    user.password_hash = get_password_hash(body.new_password)
+    db.commit()
+    db.refresh(user)
+    _notify_password_changed(user.email)
+    return _session(user)
+
+
+@router.post("/change-password/start", response_model=schemas.OtpChallengeOut)
+def start_password_change(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    """Send a code to the account's email; the new password is set only after it's verified."""
+    challenge = otp_service.start(db, current_user.email, "change_password", user_id=current_user.id)
+    return otp_service.describe(challenge)
+
+
+@router.post("/change-password/verify")
+def complete_password_change(body: schemas.PasswordOtpVerify, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    otp_service.verify(db, body.challenge_id, body.code, purposes=("change_password",), user_id=current_user.id)
+    current_user.password_hash = get_password_hash(body.new_password)
+    db.commit()
+    _notify_password_changed(current_user.email)
+    return {"detail": "Password changed"}

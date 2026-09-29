@@ -258,3 +258,21 @@ class ParseSplitRequest(BaseModel):
 
 class GoogleSignInRequest(BaseModel):
     credential: str = Field(..., min_length=20, max_length=4096)
+
+
+class ForgotPasswordStart(BaseModel):
+    email: str
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        value = value.strip().lower()
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value):
+            raise ValueError("Invalid email address")
+        return value
+
+
+class PasswordOtpVerify(BaseModel):
+    challenge_id: str = Field(..., min_length=10, max_length=64)
+    code: str = Field(..., pattern=r"^\s*\d{6}\s*$")
+    new_password: str = Field(..., min_length=8, max_length=128)

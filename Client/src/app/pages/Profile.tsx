@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { ChangeEmailDialog } from "../components/ChangeEmailDialog";
+import { ChangePasswordDialog } from "../components/ChangePasswordDialog";
 import { HealthScoreCard } from "../components/HealthScoreCard";
 import { toCSV, todayISO } from "../lib/analytics";
 import { COUNTRIES, getAccountStats, getCountryConfig, useFinance } from "../lib/finance";
@@ -34,6 +35,7 @@ export function Profile() {
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [changingEmail, setChangingEmail] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
   const [copied, setCopied] = useState(false);
 
   // Re-sync the form only when the saved account data changes, so toggling a preference doesn't wipe unsaved edits
@@ -217,6 +219,16 @@ export function Profile() {
                 <span className="text-xs text-muted-foreground">Changing your email requires your password and a code sent to the new address.</span>
               </div>
 
+              <div className="grid gap-2">
+                <span className="text-sm text-muted-foreground">Password</span>
+                <div className="flex gap-2">
+                  <input type="password" value="••••••••" readOnly aria-label="Password" className="min-w-0 flex-1 rounded-2xl border border-border bg-muted/40 px-4 py-3 text-muted-foreground outline-none" />
+                  <button type="button" onClick={() => setChangingPassword(true)} className="rounded-2xl border border-border px-4 py-3 text-sm font-medium transition-colors hover:border-primary hover:text-primary">
+                    Change
+                  </button>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <label className="grid gap-2">
                   <span className="text-sm text-muted-foreground">Phone</span>
@@ -311,6 +323,11 @@ export function Profile() {
           </button>
         </div>
       </motion.div>
+      <ChangePasswordDialog
+        open={changingPassword}
+        onClose={() => setChangingPassword(false)}
+        onChanged={() => setMessage({ tone: "ok", text: "Password changed. A confirmation was sent to your email." })}
+      />
       <ChangeEmailDialog
         open={changingEmail}
         onClose={() => setChangingEmail(false)}

@@ -236,6 +236,10 @@ interface FinanceContextValue {
   register: (payload: UserCredentials) => Promise<Result<OtpChallenge>>;
   verifyOtp: (challengeId: string, code: string) => Promise<Result>;
   googleSignIn: (credential: string) => Promise<Result>;
+  startPasswordReset: (email: string) => Promise<Result<OtpChallenge>>;
+  completePasswordReset: (challengeId: string, code: string, newPassword: string) => Promise<Result>;
+  startPasswordChange: () => Promise<Result<OtpChallenge>>;
+  completePasswordChange: (challengeId: string, code: string, newPassword: string) => Promise<Result>;
   resendOtp: (challengeId: string) => Promise<Result<OtpChallenge>>;
   startEmailChange: (newEmail: string, password: string) => Promise<Result<OtpChallenge>>;
   confirmEmailChange: (challengeId: string, code: string) => Promise<Result>;
@@ -897,6 +901,53 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   }
 
   /** Step 2: exchange the emailed code for a session. */
+  async function beginSession(response: { access_token: string; user: RemoteUser }) {
+    setBackendStatus("connected");
+    setToken(response.access_token);
+    applyRemoteUser(response.user);
+    setTransactions([]);
+    setInsights(emptyInsights);
+    await loadRemote(response.access_token).catch(() => undefined);
+  }
+
+  async function startPasswordReset(email: string): Promise<Result<OtpChallenge>> {
+    return startAuth("/auth/forgot-password/start", { email: email.trim() }, "Unable to send the reset code");
+  }
+
+  /** Verify the reset code, set the new password and sign in. */
+  async function completePasswordReset(challengeId: string, code: string, newPassword: string): Promise<Result> {
+    try {
+      const response = await fetchJson<{ access_token: string; user: RemoteUser }>("/auth/forgot-password/verify", {
+        method: "POST",
+        body: JSON.stringify({ challenge_id: challengeId, code, new_password: newPassword }),
+      });
+      await beginSession(response);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: errorMessage(error, "Unable to reset the password") };
+    }
+  }
+
+  async function startPasswordChange(): Promise<Result<OtpChallenge>> {
+    if (!connected) return { ok: false, error: "Changing your password needs a connection to the server." };
+    try {
+      return { ok: true, data: toChallenge(await fetchJson<RemoteChallenge>("/auth/change-password/start", { method: "POST" }, token)) };
+    } catch (error) {
+      if (handleAuthError(error)) return { ok: false, error: "Your session expired. Please sign in again." };
+      return { ok: false, error: errorMessage(error, "Unable to send the code") };
+    }
+  }
+
+  async function completePasswordChange(challengeId: string, code: string, newPassword: string): Promise<Result> {
+    try {
+      await fetchJson("/auth/change-password/verify", { method: "POST", body: JSON.stringify({ challenge_id: challengeId, code, new_password: newPassword }) }, token);
+      return { ok: true };
+    } catch (error) {
+      if (handleAuthError(error)) return { ok: false, error: "Your session expired. Please sign in again." };
+      return { ok: false, error: errorMessage(error, "Unable to change the password") };
+    }
+  }
+
   /** Sign in with a Google ID token from the Google button (no OTP: Google verified the email). */
   async function googleSignIn(credential: string): Promise<Result> {
     try {
@@ -1390,6 +1441,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         register,
         verifyOtp,
         googleSignIn,
+        startPasswordReset,
+        completePasswordReset,
+        startPasswordChange,
+        completePasswordChange,
         resendOtp,
         startEmailChange,
         confirmEmailChange,

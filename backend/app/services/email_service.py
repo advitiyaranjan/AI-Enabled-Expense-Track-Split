@@ -59,6 +59,8 @@ def send_otp_email(to: str, code: str, purpose: str, ttl_minutes: int) -> None:
         "register": "finish creating your account",
         "login": "sign in",
         "change_email": "confirm this as your new FinanceAI email address",
+        "reset_password": "reset your FinanceAI password",
+        "change_password": "change your FinanceAI password",
     }.get(purpose, "continue")
     subject = f"{code} is your FinanceAI verification code"
     text = (
@@ -84,4 +86,13 @@ def send_email_changed_notice(old_email: str, new_email: str) -> None:
         f"The email address on your FinanceAI account was changed from {old_email} to {new_email}.\n\n"
         "If you made this change, no action is needed. If you didn't, reply to this email or contact support right away "
         "and change your password.",
+    )
+
+
+def send_password_changed_notice(email: str) -> None:
+    send_email(
+        email,
+        "Your FinanceAI password was changed",
+        "The password for your FinanceAI account was just changed.\n\n"
+        "If this was you, no action is needed. If it wasn't, use 'Forgot password' on the sign-in page right away.",
     )

@@ -4,14 +4,19 @@ import { Globe2, Lock, Mail, MapPin, Phone, TrendingUp, User } from "lucide-reac
 import { motion } from "motion/react";
 import { GoogleSignInButton } from "../components/GoogleSignInButton";
 import { OtpStep } from "../components/OtpStep";
+import { PasswordOtpStep } from "../components/PasswordOtpStep";
 import { COUNTRIES as countries, getCountryConfig, useFinance, type OtpChallenge } from "../lib/finance";
 
 export function AuthPage() {
-  const { isAuthenticated, login, register, loading, backendStatus, reconnect } = useFinance();
+  const { isAuthenticated, login, register, loading, backendStatus, reconnect, startPasswordReset, completePasswordReset } = useFinance();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [challenge, setChallenge] = useState<OtpChallenge | null>(null);
+  const [resetting, setResetting] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetChallenge, setResetChallenge] = useState<OtpChallenge | null>(null);
+  const [resetBusy, setResetBusy] = useState(false);
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -82,7 +87,48 @@ export function AuthPage() {
         </motion.div>
 
         <motion.div initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} className="order-first rounded-[2rem] border border-border bg-card p-6 shadow-2xl shadow-black/20 sm:p-8 lg:order-none">
-          {challenge ? (
+          {resetChallenge ? (
+            <div>
+              <h2 className="mb-1 text-2xl font-bold">Reset your password</h2>
+              <p className="mb-5 text-sm text-muted-foreground">Choose a new password, then enter the code we emailed you.</p>
+              <PasswordOtpStep
+                challenge={resetChallenge}
+                onChallenge={setResetChallenge}
+                onBack={() => setResetChallenge(null)}
+                onComplete={completePasswordReset}
+                description="confirm it's you. If an account exists for this email, the code is on its way"
+                submitLabel="Reset password & sign in"
+              />
+            </div>
+          ) : resetting ? (
+            <form
+              className="space-y-4"
+              onSubmit={async (event) => {
+                event.preventDefault();
+                if (!resetEmail.trim() || resetBusy) return;
+                setResetBusy(true);
+                setError("");
+                const result = await startPasswordReset(resetEmail);
+                setResetBusy(false);
+                if (result.ok && result.data) setResetChallenge(result.data);
+                else setError(result.error ?? "Unable to send the reset code");
+              }}
+            >
+              <h2 className="text-2xl font-bold">Forgot password?</h2>
+              <p className="text-sm text-muted-foreground">Enter your account email and we'll send a code to reset it.</p>
+              <div className="flex items-center gap-3 rounded-2xl border border-border bg-input-background px-4 py-3 focus-within:border-primary">
+                <Mail className="h-4 w-4 text-muted-foreground" />
+                <input type="email" autoComplete="email" autoFocus value={resetEmail} onChange={(event) => setResetEmail(event.target.value)} className="w-full bg-transparent outline-none" placeholder="you@example.com" />
+              </div>
+              {error ? <div className="rounded-2xl border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive">{error}</div> : null}
+              <button type="submit" disabled={!resetEmail.trim() || resetBusy} className="w-full rounded-2xl bg-primary px-5 py-4 font-medium text-primary-foreground transition-colors hover:bg-primary-glow disabled:opacity-50">
+                {resetBusy ? "Sending code..." : "Send reset code"}
+              </button>
+              <button type="button" onClick={() => { setResetting(false); setError(""); }} className="w-full text-center text-sm text-muted-foreground hover:text-foreground">
+                Back to sign in
+              </button>
+            </form>
+          ) : challenge ? (
             <OtpStep
               challenge={challenge}
               onChallenge={setChallenge}
@@ -149,6 +195,19 @@ export function AuthPage() {
                 <Lock className="h-4 w-4 text-muted-foreground" />
                 <input type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} className="w-full bg-transparent outline-none" placeholder="Choose a strong password" />
               </div>
+              {mode === "login" ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResetting(true);
+                    setResetEmail(form.email);
+                    setError("");
+                  }}
+                  className="justify-self-end text-sm font-medium text-primary hover:underline"
+                >
+                  Forgot password?
+                </button>
+              ) : null}
             </label>
 
             {mode === "register" ? (
