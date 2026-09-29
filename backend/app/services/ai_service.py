@@ -357,6 +357,9 @@ def chat(message: str, history: list[dict], ctx: dict) -> dict:
                 messages.append({"role": turn["role"], "content": str(turn["content"])[:2000]})
         messages.append({"role": "user", "content": message})
         reply = (complete(messages, tier="smart", effort="low", max_output=700, temperature=0.3) or "").strip()
+        if not reply:
+            # Sol refused or failed: a lighter OpenAI model still beats the rules engine
+            reply = (complete(messages, tier="fast", effort="low", max_output=700, temperature=0.3) or "").strip()
         if reply:
             return {"reply": reply, "source": "ai", "suggestions": SUGGESTIONS}
         # OpenAI is configured but couldn't answer: say why rather than silently switching engines

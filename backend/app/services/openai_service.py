@@ -145,7 +145,7 @@ def complete(messages: list[dict], *, tier: str = "fast", effort: str = "low", m
         except RateLimitError as exc:
             if "insufficient_quota" in str(exc) or "credit" in str(exc):
                 _account["error"] = "insufficient_quota"
-                logger.error("OpenAI account has no credits; using the rules engine until billing is topped up")
+                logger.error("OpenAI refused %s for lack of credits: %s", model, str(exc)[:300])
             else:
                 _account["error"] = "rate_limited"
                 logger.warning("OpenAI rate limit for %s: %s", model, exc)

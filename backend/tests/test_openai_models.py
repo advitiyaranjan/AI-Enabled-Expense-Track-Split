@@ -152,3 +152,19 @@ def test_chat_uses_openai_when_available_and_explains_fallback_otherwise(fake):
     client.no_credits = True
     reply = ai_service.chat("hello", [], ctx)
     assert reply["source"] == "rules" and "out of credits" in reply["notice"]
+
+
+def test_chat_falls_back_to_lighter_openai_model_before_rules(fake):
+    client = fake(EVERYTHING)
+    original = client.chat.completions.create
+
+    def refuse_sol(**kwargs):
+        if kwargs["model"] == "gpt-6.1-sol":
+            client.calls.append(dict(kwargs))
+            raise _error(RateLimitError, "You have no credits remaining. insufficient_quota")
+        return original(**kwargs)
+
+    client.chat.completions.create = refuse_sol
+    ctx = ai_service.build_context([], [], "INR", date(2026, 9, 30))
+    reply = ai_service.chat("hello", [], ctx)
+    assert reply["source"] == "ai" and client.calls[-1]["model"] == "gpt-6-luna"
