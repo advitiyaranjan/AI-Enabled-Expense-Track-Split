@@ -1,294 +1,315 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { ArrowUpRight, ArrowDownRight, ScanLine, Users, TrendingUp, Eye, EyeOff, Sparkles } from "lucide-react";
-import { LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import {
+  ArrowDownRight,
+  ArrowUpRight,
+  CalendarClock,
+  Eye,
+  EyeOff,
+  Gauge,
+  ScanLine,
+  Users,
+  Sparkles,
+  TrendingUp,
+} from "lucide-react";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { motion } from "motion/react";
-
-const monthlyData = [
-  { month: "Jan", income: 4500, expense: 3200 },
-  { month: "Feb", income: 4200, expense: 3800 },
-  { month: "Mar", income: 5100, expense: 3600 },
-  { month: "Apr", income: 4800, expense: 4100 },
-  { month: "May", income: 5500, expense: 3900 },
-  { month: "Jun", income: 5200, expense: 4300 },
-];
-
-const recentTransactions = [
-  { id: 1, name: "Whole Foods Market", category: "Groceries", amount: -127.50, date: "Today, 2:30 PM", icon: "🛒" },
-  { id: 2, name: "Salary Deposit", category: "Income", amount: 5500, date: "Today, 9:00 AM", icon: "💰" },
-  { id: 3, name: "Netflix Subscription", category: "Entertainment", amount: -15.99, date: "Yesterday", icon: "🎬" },
-  { id: 4, name: "Uber Ride", category: "Transport", amount: -24.50, date: "Yesterday", icon: "🚗" },
-  { id: 5, name: "Coffee Shop", category: "Food & Dining", amount: -8.75, date: "Apr 11", icon: "☕" },
-];
-
-const aiInsights = [
-  {
-    title: "Great spending this week!",
-    description: "You're 15% under your weekly budget. Keep it up!",
-    type: "positive",
-  },
-  {
-    title: "Recurring charge detected",
-    description: "Netflix subscription ($15.99) will renew in 3 days",
-    type: "info",
-  },
-  {
-    title: "Budget alert",
-    description: "You're approaching your Food & Dining limit ($450/$500)",
-    type: "warning",
-  },
-];
+import { HealthScoreCard } from "../components/HealthScoreCard";
+import { QuickAdd } from "../components/QuickAdd";
+import { daysUntil, formatDate, getBudgetStatus, getMonthPace, getSafeToSpend, todayISO } from "../lib/analytics";
+import { getAccountStats, getMonthlySeries, useChartTheme, useFinance } from "../lib/finance";
 
 export function Dashboard() {
   const [showBalance, setShowBalance] = useState(true);
-  const balance = 12345.67;
-  const income = 5500;
-  const expense = 4127.74;
+  const { loading, transactions, profile, insights, budgets, formatMoney } = useFinance();
+  const chart = useChartTheme();
+
+  const stats = getAccountStats(transactions);
+  const pace = getMonthPace(transactions);
+  const recurring = insights.recurring ?? [];
+  const safe = getSafeToSpend(transactions, budgets, recurring);
+  const chartData = getMonthlySeries(insights, transactions, profile.locale);
+  const recentTransactions = transactions.slice(0, 5);
+  const today = todayISO();
+  const upcoming = recurring
+    .filter((charge) => charge.active && daysUntil(charge.next_date, today) >= 0 && daysUntil(charge.next_date, today) <= 14)
+    .sort((left, right) => left.next_date.localeCompare(right.next_date));
+
+  const budgetStatuses = budgets
+    .filter((budget) => budget.limit > 0)
+    .map((budget) => ({ budget, ...getBudgetStatus(transactions, budget) }))
+    .filter((entry) => entry.spent > 0);
+  const riskyBudget = [...budgetStatuses].sort((left, right) => right.projected / right.budget.limit - left.projected / left.budget.limit)[0];
+  const risingCategory = (insights.category_trends ?? []).find((trend) => trend.change_pct !== null && trend.change_pct > 20 && trend.this_month > 0);
+  const latestUnusual = insights.unusual_spending[0];
+  const paceChange = pace.lastMonthSpent > 0 ? ((pace.projectedSpend - pace.lastMonthSpent) / pace.lastMonthSpent) * 100 : null;
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-7xl mx-auto p-4 lg:p-8 space-y-6">
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="flex items-center justify-between"
-        >
-          <div>
-            <h1 className="text-3xl lg:text-4xl font-bold">Good evening, Alex</h1>
-            <p className="text-muted-foreground mt-1">Here's your financial overview</p>
+    <div className="mx-auto max-w-7xl space-y-6 p-4 lg:p-8">
+      <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }}>
+        <h1 className="text-3xl font-bold lg:text-4xl">Financial overview</h1>
+        <p className="mt-1 text-muted-foreground">
+          {loading ? "Loading your dashboard..." : "Everything important in one glance."}
+        </p>
+      </motion.div>
+
+      <motion.div
+        initial={{ opacity: 0, scale: 0.98 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-primary via-secondary-bright to-secondary p-6 lg:p-8"
+        style={{ boxShadow: "0 20px 60px -20px rgba(6, 182, 212, 0.45)" }}
+      >
+        <div className="absolute inset-0 animate-shimmer opacity-70" />
+        <div className="relative z-10 text-white">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <p className="text-sm text-white/80">Net balance (all tracked activity)</p>
+              <h2 className="mt-2 text-4xl font-bold lg:text-5xl">
+                {showBalance ? formatMoney(stats.balance) : "••••••"}
+              </h2>
+            </div>
+            <button
+              onClick={() => setShowBalance((current) => !current)}
+              aria-label={showBalance ? "Hide balance" : "Show balance"}
+              className="rounded-full border border-white/20 bg-white/10 p-3 transition-colors hover:bg-white/20"
+            >
+              {showBalance ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
+            </button>
           </div>
-        </motion.div>
 
-        {/* Balance Card */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.5, delay: 0.1 }}
-          className="relative overflow-hidden rounded-2xl p-6 lg:p-8 bg-gradient-to-br from-primary via-secondary-bright to-secondary"
-          style={{
-            boxShadow: "0 20px 60px -15px rgba(6, 182, 212, 0.4)",
-          }}
-        >
-          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-shimmer" />
-
-          <div className="relative z-10">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-primary-foreground/80 text-sm font-medium">Total Balance</span>
-              <button
-                onClick={() => setShowBalance(!showBalance)}
-                className="text-primary-foreground/80 hover:text-primary-foreground transition-colors"
-              >
-                {showBalance ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
-              </button>
-            </div>
-
-            <div className="text-4xl lg:text-5xl font-bold text-primary-foreground mb-6">
-              {showBalance ? `$${balance.toLocaleString("en-US", { minimumFractionDigits: 2 })}` : "••••••"}
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <ArrowDownRight className="w-4 h-4 text-income-bright" />
-                  <span className="text-primary-foreground/80 text-sm">Income</span>
-                </div>
-                <div className="text-2xl font-semibold text-primary-foreground">
-                  ${income.toLocaleString()}
-                </div>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="rounded-2xl bg-white/10 p-4 backdrop-blur">
+              <div className="mb-2 flex items-center gap-2 text-sm text-white/80">
+                <ArrowDownRight className="h-4 w-4" />
+                Earned this month
               </div>
-
-              <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <ArrowUpRight className="w-4 h-4 text-expense-bright" />
-                  <span className="text-primary-foreground/80 text-sm">Expense</span>
-                </div>
-                <div className="text-2xl font-semibold text-primary-foreground">
-                  ${expense.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                </div>
+              <div className="text-2xl font-semibold">{showBalance ? formatMoney(pace.earned) : "••••"}</div>
+            </div>
+            <div className="rounded-2xl bg-white/10 p-4 backdrop-blur">
+              <div className="mb-2 flex items-center gap-2 text-sm text-white/80">
+                <ArrowUpRight className="h-4 w-4" />
+                Spent this month
               </div>
+              <div className="text-2xl font-semibold">{showBalance ? formatMoney(pace.spent) : "••••"}</div>
+            </div>
+            <div className="rounded-2xl bg-white/10 p-4 backdrop-blur">
+              <div className="mb-2 flex items-center gap-2 text-sm text-white/80">
+                <TrendingUp className="h-4 w-4" />
+                Month-end projection
+              </div>
+              <div className="text-2xl font-semibold">{showBalance ? formatMoney(pace.projectedSpend) : "••••"}</div>
+              {paceChange !== null ? (
+                <p className="mt-1 text-xs text-white/80">
+                  {Math.abs(paceChange).toFixed(0)}% {paceChange > 0 ? "above" : "below"} last month
+                </p>
+              ) : null}
             </div>
           </div>
+        </div>
+      </motion.div>
+
+      <QuickAdd />
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="rounded-3xl border border-border bg-card p-6">
+          <div className="mb-4 flex items-center gap-2">
+            <Gauge className="h-5 w-5 text-primary" />
+            <h2 className="text-xl font-semibold">Safe to spend</h2>
+          </div>
+          {safe.basis === "none" ? (
+            <p className="text-sm text-muted-foreground">Log your income or set budgets and we'll work out a daily spending allowance.</p>
+          ) : (
+            <>
+              <p className={`text-4xl font-bold ${safe.available > 0 ? "text-income" : "text-expense"}`}>
+                {formatMoney(safe.perDay)}
+                <span className="ml-1 text-base font-normal text-muted-foreground">/ day</span>
+              </p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {safe.available > 0
+                  ? `${formatMoney(safe.available)} left for the next ${safe.daysLeft} day${safe.daysLeft === 1 ? "" : "s"}`
+                  : `You're ${formatMoney(Math.abs(safe.available))} over for this month`}
+                {safe.basis === "income" ? " based on this month's income" : " based on your total budget"}
+                {safe.upcomingBills > 0 ? `, after reserving ${formatMoney(safe.upcomingBills)} for upcoming bills.` : "."}
+              </p>
+            </>
+          )}
         </motion.div>
 
-        {/* Quick Actions */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.2 }}
-          className="grid grid-cols-2 lg:grid-cols-3 gap-4"
-        >
-          <Link
-            to="/scan"
-            className="bg-card border border-border-bright rounded-xl p-4 hover:border-primary transition-all duration-200 hover:shadow-lg hover:shadow-primary/20 group"
-          >
-            <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-              <ScanLine className="w-6 h-6 text-primary" />
-            </div>
-            <h3 className="font-semibold mb-1">Scan Receipt</h3>
-            <p className="text-sm text-muted-foreground">AI-powered capture</p>
-          </Link>
-
-          <Link
-            to="/split"
-            className="bg-card border border-border-bright rounded-xl p-4 hover:border-primary transition-all duration-200 hover:shadow-lg hover:shadow-primary/20 group"
-          >
-            <div className="w-12 h-12 rounded-lg bg-income/10 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-              <Users className="w-6 h-6 text-income" />
-            </div>
-            <h3 className="font-semibold mb-1">Split Bill</h3>
-            <p className="text-sm text-muted-foreground">Share with friends</p>
-          </Link>
-
-          <Link
-            to="/insights"
-            className="bg-card border border-border-bright rounded-xl p-4 hover:border-primary transition-all duration-200 hover:shadow-lg hover:shadow-primary/20 group col-span-2 lg:col-span-1"
-          >
-            <div className="w-12 h-12 rounded-lg bg-secondary-bright/10 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-              <Sparkles className="w-6 h-6 text-secondary-bright" />
-            </div>
-            <h3 className="font-semibold mb-1">AI Insights</h3>
-            <p className="text-sm text-muted-foreground">Smart predictions</p>
-          </Link>
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
+          <HealthScoreCard />
         </motion.div>
 
-        <div className="grid lg:grid-cols-3 gap-6">
-          {/* Chart Section */}
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5, delay: 0.3 }}
-            className="lg:col-span-2 bg-card border border-border rounded-2xl p-6"
-          >
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-xl font-semibold">Income vs Expense</h2>
-                <p className="text-sm text-muted-foreground mt-1">Last 6 months overview</p>
-              </div>
-              <TrendingUp className="w-5 h-5 text-primary" />
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="rounded-3xl border border-border bg-card p-6">
+          <div className="mb-4 flex items-center gap-2">
+            <CalendarClock className="h-5 w-5 text-primary" />
+            <h2 className="text-xl font-semibold">Upcoming bills</h2>
+          </div>
+          {upcoming.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {recurring.length ? "Nothing due in the next 14 days." : "Recurring charges show up here once we've seen them repeat."}
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {upcoming.slice(0, 5).map((charge) => {
+                const days = daysUntil(charge.next_date, today);
+                return (
+                  <div key={charge.name} className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{charge.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {days === 0 ? "Due today" : days === 1 ? "Tomorrow" : `In ${days} days`} · {charge.cadence}
+                      </p>
+                    </div>
+                    <p className="font-semibold">{formatMoney(charge.amount)}</p>
+                  </div>
+                );
+              })}
             </div>
+          )}
+        </motion.div>
+      </div>
 
-            <div className="h-64">
+      <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} className="grid gap-4 md:grid-cols-3">
+        {[
+          { to: "/scan", icon: ScanLine, title: "Scan a receipt", text: "Snap a bill and AI fills in the expense.", tone: "text-primary bg-primary/10" },
+          { to: "/split", icon: Users, title: "Split expenses", text: "Track shared bills and who owes whom.", tone: "text-income bg-income/10" },
+          { to: "/insights", icon: Sparkles, title: "Ask the AI", text: "Forecasts, subscriptions, and what-if savings.", tone: "text-secondary-bright bg-secondary-bright/10" },
+        ].map((item) => (
+          <Link key={item.to} to={item.to} className="flex items-center gap-4 rounded-2xl border border-border bg-card p-4 transition-all hover:border-primary hover:shadow-lg hover:shadow-primary/10">
+            <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${item.tone}`}>
+              <item.icon className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="font-semibold">{item.title}</h3>
+              <p className="text-sm text-muted-foreground">{item.text}</p>
+            </div>
+          </Link>
+        ))}
+      </motion.div>
+
+      <div className="grid gap-6 lg:grid-cols-[1.75fr_1fr]">
+        <motion.div initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} className="rounded-3xl border border-border bg-card p-6">
+          <div className="mb-6 flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold">Income vs expense</h2>
+              <p className="text-sm text-muted-foreground">Monthly totals from your activity</p>
+            </div>
+            <TrendingUp className="h-5 w-5 text-primary" />
+          </div>
+
+          {chartData.length === 0 ? (
+            <div className="flex h-72 items-center justify-center rounded-2xl bg-muted/30 text-sm text-muted-foreground">
+              Add transactions to see your monthly trend.
+            </div>
+          ) : (
+            <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={monthlyData}>
+                <AreaChart data={chartData}>
                   <defs>
-                    <linearGradient id="incomeGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10B981" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#10B981" stopOpacity={0} />
+                    <linearGradient id="dashboard-income" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={chart.income} stopOpacity={0.35} />
+                      <stop offset="95%" stopColor={chart.income} stopOpacity={0} />
                     </linearGradient>
-                    <linearGradient id="expenseGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#F97316" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#F97316" stopOpacity={0} />
+                    <linearGradient id="dashboard-expense" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={chart.expense} stopOpacity={0.35} />
+                      <stop offset="95%" stopColor={chart.expense} stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <XAxis dataKey="month" stroke="#94A3B8" fontSize={12} />
-                  <YAxis stroke="#94A3B8" fontSize={12} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "#1A1F2E",
-                      border: "1px solid rgba(148, 163, 184, 0.2)",
-                      borderRadius: "8px",
-                      color: "#E8EAED",
-                    }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="income"
-                    stroke="#10B981"
-                    strokeWidth={2}
-                    fill="url(#incomeGradient)"
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="expense"
-                    stroke="#F97316"
-                    strokeWidth={2}
-                    fill="url(#expenseGradient)"
-                  />
+                  <CartesianGrid stroke={chart.grid} vertical={false} />
+                  <XAxis dataKey="month" stroke={chart.axis} fontSize={12} tickLine={false} axisLine={false} />
+                  <YAxis stroke={chart.axis} fontSize={12} tickLine={false} axisLine={false} width={60} tickFormatter={(value) => new Intl.NumberFormat(profile.locale, { notation: "compact" }).format(value)} />
+                  <Tooltip contentStyle={chart.tooltip} formatter={(value: number, name: string) => [formatMoney(value), name === "income" ? "Income" : "Expense"]} />
+                  <Area type="monotone" dataKey="income" stroke={chart.income} fill="url(#dashboard-income)" strokeWidth={2.5} />
+                  <Area type="monotone" dataKey="expense" stroke={chart.expense} fill="url(#dashboard-expense)" strokeWidth={2.5} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
-          </motion.div>
+          )}
+        </motion.div>
 
-          {/* AI Insights */}
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5, delay: 0.4 }}
-            className="bg-card border border-border rounded-2xl p-6"
-          >
-            <div className="flex items-center gap-2 mb-6">
-              <Sparkles className="w-5 h-5 text-primary" />
-              <h2 className="text-xl font-semibold">AI Insights</h2>
-            </div>
-
-            <div className="space-y-4">
-              {aiInsights.map((insight, index) => (
-                <div
-                  key={index}
-                  className={`p-4 rounded-xl border ${
-                    insight.type === "positive"
-                      ? "bg-income/5 border-income/20"
-                      : insight.type === "warning"
-                      ? "bg-expense/5 border-expense/20"
-                      : "bg-primary/5 border-primary/20"
-                  }`}
-                  style={{ animationDelay: `${index * 100}ms` }}
-                >
-                  <h4 className="font-semibold mb-1 text-sm">{insight.title}</h4>
-                  <p className="text-xs text-muted-foreground">{insight.description}</p>
-                </div>
-              ))}
-            </div>
-          </motion.div>
-        </div>
-
-        {/* Recent Transactions */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.5 }}
-          className="bg-card border border-border rounded-2xl p-6"
-        >
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold">Recent Transactions</h2>
-            <Link to="/transactions" className="text-sm text-primary hover:text-primary-glow transition-colors">
-              View All
-            </Link>
+        <motion.div initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} className="rounded-3xl border border-border bg-card p-6">
+          <div className="mb-5 flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-primary" />
+            <h2 className="text-xl font-semibold">AI summary</h2>
           </div>
 
-          <div className="space-y-3">
-            {recentTransactions.map((transaction, index) => (
-              <motion.div
-                key={transaction.id}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.3, delay: 0.6 + index * 0.05 }}
-                className="flex items-center gap-4 p-3 rounded-xl hover:bg-muted/50 transition-colors cursor-pointer"
-              >
-                <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center text-2xl">
-                  {transaction.icon}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="font-medium truncate">{transaction.name}</h4>
-                  <p className="text-sm text-muted-foreground">{transaction.category}</p>
-                </div>
-                <div className="text-right">
-                  <div
-                    className={`font-semibold ${
-                      transaction.amount > 0 ? "text-income" : "text-foreground"
-                    }`}
-                  >
-                    {transaction.amount > 0 ? "+" : ""}${Math.abs(transaction.amount).toFixed(2)}
-                  </div>
-                  <p className="text-xs text-muted-foreground">{transaction.date}</p>
-                </div>
-              </motion.div>
-            ))}
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-expense/20 bg-expense/5 p-4">
+              <p className="text-sm font-semibold">Budget watch</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {riskyBudget
+                  ? riskyBudget.projected > riskyBudget.budget.limit
+                    ? `${riskyBudget.budget.name} is on pace for ${formatMoney(riskyBudget.projected)} against a ${formatMoney(riskyBudget.budget.limit)} limit.`
+                    : `${riskyBudget.budget.name} is your busiest budget at ${Math.round(riskyBudget.percentage)}% used, still on pace.`
+                  : "No spending against your budgets yet this month."}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+              <p className="text-sm font-semibold">Trend</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {risingCategory
+                  ? `${risingCategory.category} is up ${Math.round(risingCategory.change_pct ?? 0)}% compared with this point in a typical month.`
+                  : "Your category spending is in line with your usual months."}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-secondary-bright/20 bg-secondary-bright/5 p-4">
+              <p className="text-sm font-semibold">Unusual activity</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {latestUnusual
+                  ? `${latestUnusual.name ?? "A recent expense"} (${formatMoney(latestUnusual.amount)}) stood out${latestUnusual.reason ? `: ${latestUnusual.reason}` : "."}`
+                  : "Nothing looks out of the ordinary."}
+              </p>
+            </div>
           </div>
         </motion.div>
       </div>
+
+      <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} className="rounded-3xl border border-border bg-card p-6">
+        <div className="mb-5 flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-semibold">Recent transactions</h2>
+            <p className="text-sm text-muted-foreground">Your newest income and expenses</p>
+          </div>
+          <Link to="/transactions" className="text-sm text-primary transition-colors hover:text-primary-glow">
+            View all
+          </Link>
+        </div>
+
+        {recentTransactions.length === 0 ? (
+          <p className="rounded-2xl bg-muted/30 p-6 text-center text-sm text-muted-foreground">
+            No transactions yet. Try the quick-add bar above or <Link to="/transactions" className="text-primary">import a CSV</Link>.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {recentTransactions.map((transaction) => (
+              <div key={transaction.id} className="flex items-center gap-4 rounded-2xl border border-transparent px-3 py-3 transition-colors hover:border-border hover:bg-muted/30">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted text-2xl">{transaction.icon}</div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{transaction.name}</p>
+                  <p className="text-sm text-muted-foreground">{transaction.category}</p>
+                </div>
+                <div className="text-right">
+                  <p className={`font-semibold ${transaction.type === "income" ? "text-income" : "text-foreground"}`}>
+                    {transaction.type === "income" ? "+" : "-"}
+                    {formatMoney(Math.abs(transaction.amount))}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{formatDate(transaction.date, profile.locale)}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </motion.div>
     </div>
   );
 }

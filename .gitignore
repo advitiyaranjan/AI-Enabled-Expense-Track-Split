@@ -26,3 +26,12 @@ Thumbs.db
 # uploads and database
 uploads/
 *.sqlite3
+*.db
+*.db-journal
+
+# test artifacts
+.pytest_cache/
+backend/.tmp_pytest/
+
+# local server logs
+*-server-*.log

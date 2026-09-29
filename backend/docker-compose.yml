@@ -16,7 +16,7 @@ services:
     depends_on:
       - db
     environment:
-      DATABASE_URL: postgres://postgres:password@db:5432/finance
+      DATABASE_URL: postgresql://postgres:password@db:5432/finance
       JWT_SECRET: super-secret-change-me
       OPENAI_API_KEY: ""
       AWS_S3_BUCKET: ""

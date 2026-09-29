@@ -1,6 +1,7 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional, List, Any
-from datetime import date, time, datetime
+from datetime import date, time as dt_time, datetime
+import re
 
 
 class Token(BaseModel):
@@ -9,28 +10,95 @@ class Token(BaseModel):
 
 
 class UserCreate(BaseModel):
-    name: str
-    email: EmailStr
+    name: str = Field(..., min_length=1, max_length=100)
+    email: str
+    password: str = Field(..., min_length=8, max_length=128)
+    phone: Optional[str] = None
+    location: Optional[str] = None
+    country: Optional[str] = None
+    currency: Optional[str] = None
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value):
+            raise ValueError("Invalid email address")
+        return value.lower()
+
+
+class LoginRequest(BaseModel):
+    email: str
     password: str
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value):
+            raise ValueError("Invalid email address")
+        return value.lower()
 
 
 class UserOut(BaseModel):
     id: int
     name: str
-    email: EmailStr
+    email: str
+    phone: Optional[str] = None
+    location: Optional[str] = None
+    country: str
+    currency: str
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AuthResponse(Token):
+    user: UserOut
+
+
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    location: Optional[str] = None
+    country: Optional[str] = None
+    currency: Optional[str] = None
+
+    @field_validator("email")
+    @classmethod
+    def validate_optional_email(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value):
+            raise ValueError("Invalid email address")
+        return value.lower()
 
 
 class TransactionCreate(BaseModel):
-    merchant_name: Optional[str]
+    merchant_name: Optional[str] = None
     category: str
     amount: float
     date: date
-    time: Optional[time]
+    time: Optional[dt_time] = None
     icon: Optional[str] = ""
     type: str  # income | expense
+
+    @field_validator("type")
+    @classmethod
+    def validate_type(cls, value: str) -> str:
+        value = value.lower().strip()
+        if value not in ("income", "expense"):
+            raise ValueError("type must be 'income' or 'expense'")
+        return value
+
+    @field_validator("amount")
+    @classmethod
+    def validate_amount(cls, value: float) -> float:
+        if value == 0:
+            raise ValueError("amount must be non-zero")
+        return value
+
+
+class TransactionBulkCreate(BaseModel):
+    transactions: List[TransactionCreate] = Field(..., max_length=2000)
 
 
 class TransactionOut(BaseModel):
@@ -39,12 +107,11 @@ class TransactionOut(BaseModel):
     category: str
     amount: float
     date: date
-    time: Optional[time]
+    time: Optional[dt_time]
     icon: Optional[str]
     type: str
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ReceiptOut(BaseModel):
@@ -53,8 +120,13 @@ class ReceiptOut(BaseModel):
     raw_text: Optional[str]
     parsed_json: Optional[Any]
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ReceiptScanRequest(BaseModel):
+    filename: Optional[str] = "receipt.jpg"
+    image_base64: Optional[str] = None
+    raw_text: Optional[str] = None
 
 
 class GroupCreate(BaseModel):
@@ -90,3 +162,24 @@ class InsightsOut(BaseModel):
     category_breakdown: List[dict]
     predictions: List[dict]
     unusual_spending: List[dict]
+
+
+class BudgetContext(BaseModel):
+    name: str
+    limit: float
+
+
+class ChatMessage(BaseModel):
+    role: str  # user | assistant
+    content: str = Field(..., max_length=4000)
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=2000)
+    history: List[ChatMessage] = Field(default_factory=list, max_length=20)
+    budgets: List[BudgetContext] = Field(default_factory=list, max_length=50)
+
+
+class ParseTransactionRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=500)
+    today: Optional[date] = None

@@ -3,78 +3,78 @@
 :root {
   --font-size: 16px;
 
-  /* Neo-Financial Intelligence Theme - Deep Navy Base */
-  --background: #0A0E1A;
-  --background-secondary: #0F1419;
-  --foreground: #E8EAED;
+  /* Light theme - used when the .dark class is absent */
+  --background: #F5F7FB;
+  --background-secondary: #EEF2F7;
+  --foreground: #0F172A;
 
-  --card: #131823;
-  --card-foreground: #E8EAED;
-  --card-glow: rgba(6, 182, 212, 0.1);
+  --card: #FFFFFF;
+  --card-foreground: #0F172A;
+  --card-glow: rgba(8, 145, 178, 0.08);
 
-  --popover: #1A1F2E;
-  --popover-foreground: #E8EAED;
+  --popover: #FFFFFF;
+  --popover-foreground: #0F172A;
 
-  /* Electric Cyan Primary */
-  --primary: #06B6D4;
-  --primary-glow: #00D9FF;
-  --primary-foreground: #0A0E1A;
+  --primary: #0891B2;
+  --primary-glow: #06B6D4;
+  --primary-foreground: #FFFFFF;
 
-  /* Deep Blue Secondary */
   --secondary: #1E3A8A;
-  --secondary-bright: #3B82F6;
-  --secondary-foreground: #E8EAED;
+  --secondary-bright: #2563EB;
+  --secondary-foreground: #FFFFFF;
 
-  /* Income - Neon Green */
-  --income: #10B981;
-  --income-bright: #34D399;
-  --income-foreground: #0A0E1A;
+  --income: #059669;
+  --income-bright: #10B981;
+  --income-foreground: #FFFFFF;
 
-  /* Expense - Coral/Salmon */
-  --expense: #F97316;
-  --expense-bright: #FB923C;
-  --expense-foreground: #0A0E1A;
+  --expense: #EA580C;
+  --expense-bright: #F97316;
+  --expense-foreground: #FFFFFF;
 
-  --muted: #1E2433;
-  --muted-foreground: #94A3B8;
+  --muted: #EEF2F7;
+  --muted-foreground: #5B6B82;
 
-  --accent: #1E3A8A;
-  --accent-foreground: #E8EAED;
+  --accent: #E0F2FE;
+  --accent-foreground: #0F172A;
 
-  --destructive: #EF4444;
-  --destructive-foreground: #FEE2E2;
+  --destructive: #DC2626;
+  --destructive-foreground: #FFFFFF;
 
-  --border: rgba(148, 163, 184, 0.15);
-  --border-bright: rgba(6, 182, 212, 0.3);
+  --border: rgba(15, 23, 42, 0.1);
+  --border-bright: rgba(8, 145, 178, 0.35);
 
-  --input: rgba(30, 36, 51, 0.5);
-  --input-background: #1A1F2E;
-  --switch-background: #334155;
+  --input: rgba(15, 23, 42, 0.04);
+  --input-background: #F8FAFC;
+  --switch-background: #CBD5E1;
 
   --font-weight-medium: 500;
   --font-weight-normal: 400;
   --font-weight-semibold: 600;
 
-  --ring: #06B6D4;
+  --ring: #0891B2;
 
   /* Chart Colors */
-  --chart-1: #06B6D4;
-  --chart-2: #10B981;
-  --chart-3: #F97316;
-  --chart-4: #3B82F6;
-  --chart-5: #8B5CF6;
+  --chart-1: #0891B2;
+  --chart-2: #059669;
+  --chart-3: #EA580C;
+  --chart-4: #2563EB;
+  --chart-5: #7C3AED;
+  --chart-grid: rgba(15, 23, 42, 0.08);
+  --chart-axis: #64748B;
+
+  --glass: rgba(255, 255, 255, 0.8);
 
   --radius: 0.75rem;
 
   /* Sidebar */
-  --sidebar: #0F1419;
-  --sidebar-foreground: #E8EAED;
-  --sidebar-primary: #06B6D4;
-  --sidebar-primary-foreground: #0A0E1A;
-  --sidebar-accent: #1A1F2E;
-  --sidebar-accent-foreground: #E8EAED;
-  --sidebar-border: rgba(148, 163, 184, 0.1);
-  --sidebar-ring: #06B6D4;
+  --sidebar: #FFFFFF;
+  --sidebar-foreground: #0F172A;
+  --sidebar-primary: #0891B2;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #F1F5F9;
+  --sidebar-accent-foreground: #0F172A;
+  --sidebar-border: rgba(15, 23, 42, 0.08);
+  --sidebar-ring: #0891B2;
 }
 
 .dark {
@@ -130,6 +130,11 @@
   --chart-3: #F97316;
   --chart-4: #3B82F6;
   --chart-5: #8B5CF6;
+  --chart-grid: rgba(148, 163, 184, 0.1);
+  --chart-axis: #94A3B8;
+
+  --switch-background: #334155;
+  --glass: rgba(19, 24, 35, 0.7);
 
   --sidebar: #0F1419;
   --sidebar-foreground: #E8EAED;
@@ -323,7 +328,7 @@
 
 /* Glassmorphism utility */
 .glass {
-  background: rgba(19, 24, 35, 0.7);
+  background: var(--glass);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(148, 163, 184, 0.1);
+  border: 1px solid var(--border);
 }

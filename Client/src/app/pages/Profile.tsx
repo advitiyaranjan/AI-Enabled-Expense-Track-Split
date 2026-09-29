@@ -1,292 +1,266 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Link } from "react-router";
 import {
-  User,
   Bell,
+  Database,
+  Download,
   Globe,
-  Moon,
-  Sun,
-  Lock,
-  CreditCard,
-  HelpCircle,
   LogOut,
-  ChevronRight,
-  Mail,
-  Phone,
   MapPin,
+  Moon,
+  Phone,
+  Save,
+  Sun,
+  Upload,
 } from "lucide-react";
 import { motion } from "motion/react";
+import { HealthScoreCard } from "../components/HealthScoreCard";
+import { toCSV, todayISO } from "../lib/analytics";
+import { COUNTRIES, getAccountStats, getCountryConfig, useFinance } from "../lib/finance";
 
 export function Profile() {
-  const [darkMode, setDarkMode] = useState(true);
-  const [notifications, setNotifications] = useState({
-    transactions: true,
-    budgetAlerts: true,
-    aiInsights: true,
-    weeklyReports: false,
-  });
-  const [currency, setCurrency] = useState("USD");
+  const { profile, updateProfile, transactions, budgets, groups, formatMoney, logout } = useFinance();
+  const stats = getAccountStats(transactions);
+  const accountFields = {
+    displayName: profile.displayName,
+    email: profile.email,
+    phone: profile.phone,
+    location: profile.location,
+    country: profile.country,
+  };
+  const [draft, setDraft] = useState(accountFields);
+  const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const settingsSections = [
+  // Re-sync the form only when the saved account data changes, so toggling a preference doesn't wipe unsaved edits
+  useEffect(() => {
+    setDraft(accountFields);
+  }, [profile.displayName, profile.email, profile.phone, profile.location, profile.country]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const dirty = (Object.keys(accountFields) as Array<keyof typeof accountFields>).some((key) => draft[key] !== accountFields[key]);
+
+  async function handleSave() {
+    if (!draft.displayName.trim()) return setMessage({ tone: "error", text: "Display name can't be empty." });
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(draft.email)) return setMessage({ tone: "error", text: "Enter a valid email address." });
+    setSaving(true);
+    const result = await updateProfile(draft);
+    setSaving(false);
+    setMessage(result.ok ? { tone: "ok", text: "Profile updated." } : { tone: "error", text: result.error ?? "Unable to update profile." });
+  }
+
+  function exportAll() {
+    const payload = { exportedAt: new Date().toISOString(), profile, transactions, budgets, groups };
+    const files = [
+      { name: `financeai-transactions-${todayISO()}.csv`, type: "text/csv", body: toCSV(transactions) },
+      { name: `financeai-backup-${todayISO()}.json`, type: "application/json", body: JSON.stringify(payload, null, 2) },
+    ];
+    for (const file of files) {
+      const url = URL.createObjectURL(new Blob([file.body], { type: file.type }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = file.name;
+      link.click();
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  const preferences = [
     {
-      title: "Account",
-      items: [
-        { icon: User, label: "Personal Information", action: () => {} },
-        { icon: Mail, label: "Email & Password", action: () => {} },
-        { icon: Phone, label: "Phone Number", action: () => {} },
-      ],
+      icon: profile.darkMode ? Moon : Sun,
+      label: "Dark mode",
+      value: profile.darkMode,
+      onToggle: () => void updateProfile({ darkMode: !profile.darkMode }),
     },
     {
-      title: "Preferences",
-      items: [
-        {
-          icon: darkMode ? Moon : Sun,
-          label: "Dark Mode",
-          toggle: true,
-          value: darkMode,
-          onChange: () => setDarkMode(!darkMode),
-        },
-        { icon: Globe, label: "Language", value: "English", action: () => {} },
-        { icon: CreditCard, label: "Currency", value: currency, action: () => {} },
-      ],
+      icon: Bell,
+      label: "Transaction alerts",
+      value: profile.notifications.transactions,
+      onToggle: () => void updateProfile({ notifications: { ...profile.notifications, transactions: !profile.notifications.transactions } }),
     },
     {
-      title: "Notifications",
-      items: [
-        {
-          icon: Bell,
-          label: "Transaction Alerts",
-          toggle: true,
-          value: notifications.transactions,
-          onChange: () =>
-            setNotifications({ ...notifications, transactions: !notifications.transactions }),
-        },
-        {
-          icon: Bell,
-          label: "Budget Alerts",
-          toggle: true,
-          value: notifications.budgetAlerts,
-          onChange: () =>
-            setNotifications({ ...notifications, budgetAlerts: !notifications.budgetAlerts }),
-        },
-        {
-          icon: Bell,
-          label: "AI Insights",
-          toggle: true,
-          value: notifications.aiInsights,
-          onChange: () =>
-            setNotifications({ ...notifications, aiInsights: !notifications.aiInsights }),
-        },
-        {
-          icon: Bell,
-          label: "Weekly Reports",
-          toggle: true,
-          value: notifications.weeklyReports,
-          onChange: () =>
-            setNotifications({ ...notifications, weeklyReports: !notifications.weeklyReports }),
-        },
-      ],
+      icon: Bell,
+      label: "Budget alerts",
+      value: profile.notifications.budgetAlerts,
+      onToggle: () => void updateProfile({ notifications: { ...profile.notifications, budgetAlerts: !profile.notifications.budgetAlerts } }),
     },
     {
-      title: "Security",
-      items: [
-        { icon: Lock, label: "Change Password", action: () => {} },
-        { icon: Lock, label: "Two-Factor Authentication", value: "Enabled", action: () => {} },
-        { icon: Lock, label: "Privacy Settings", action: () => {} },
-      ],
+      icon: Bell,
+      label: "AI insights",
+      value: profile.notifications.aiInsights,
+      onToggle: () => void updateProfile({ notifications: { ...profile.notifications, aiInsights: !profile.notifications.aiInsights } }),
     },
     {
-      title: "Support",
-      items: [
-        { icon: HelpCircle, label: "Help Center", action: () => {} },
-        { icon: Mail, label: "Contact Support", action: () => {} },
-      ],
+      icon: Bell,
+      label: "Weekly reports",
+      value: profile.notifications.weeklyReports,
+      onToggle: () => void updateProfile({ notifications: { ...profile.notifications, weeklyReports: !profile.notifications.weeklyReports } }),
     },
   ];
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-4xl mx-auto p-4 lg:p-8 space-y-6">
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          <h1 className="text-3xl font-bold">Profile & Settings</h1>
-          <p className="text-muted-foreground mt-1">Manage your account and preferences</p>
-        </motion.div>
+    <div className="mx-auto max-w-5xl space-y-6 p-4 lg:p-8">
+      <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }}>
+        <h1 className="text-3xl font-bold">Profile & settings</h1>
+        <p className="mt-1 text-muted-foreground">Update your identity, location, and preferences.</p>
+      </motion.div>
 
-        {/* Profile Card */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.1 }}
-          className="bg-gradient-to-br from-primary via-secondary-bright to-secondary rounded-2xl p-6 lg:p-8"
-          style={{
-            boxShadow: "0 20px 60px -15px rgba(6, 182, 212, 0.4)",
-          }}
-        >
-          <div className="flex flex-col sm:flex-row items-center gap-6">
-            <div className="w-24 h-24 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center text-4xl border-4 border-white/30">
-              👤
-            </div>
-            <div className="text-center sm:text-left flex-1">
-              <h2 className="text-2xl font-bold text-primary-foreground">Alex Thompson</h2>
-              <p className="text-primary-foreground/80 mt-1">alex.thompson@email.com</p>
-              <div className="flex flex-wrap items-center gap-4 mt-4 justify-center sm:justify-start">
-                <div className="flex items-center gap-2 text-primary-foreground/90 text-sm">
-                  <Phone className="w-4 h-4" />
-                  <span>+1 (555) 123-4567</span>
-                </div>
-                <div className="flex items-center gap-2 text-primary-foreground/90 text-sm">
-                  <MapPin className="w-4 h-4" />
-                  <span>San Francisco, CA</span>
-                </div>
-              </div>
-            </div>
-            <button className="px-6 py-3 rounded-xl bg-white/20 backdrop-blur-sm text-primary-foreground hover:bg-white/30 transition-all border border-white/30 font-medium">
-              Edit Profile
-            </button>
+      <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="rounded-3xl bg-gradient-to-br from-primary via-secondary-bright to-secondary p-6 text-white lg:p-8">
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
+          <div className="flex h-24 w-24 items-center justify-center rounded-full border-4 border-white/30 bg-white/20 text-4xl font-bold">
+            {(profile.displayName || "?").trim()[0]?.toUpperCase()}
           </div>
-        </motion.div>
-
-        {/* Settings Sections */}
-        <div className="space-y-6">
-          {settingsSections.map((section, sectionIndex) => (
-            <motion.div
-              key={section.title}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 + sectionIndex * 0.05 }}
-            >
-              <h3 className="text-lg font-semibold mb-3">{section.title}</h3>
-              <div className="bg-card border border-border rounded-xl overflow-hidden">
-                {section.items.map((item, itemIndex) => (
-                  <motion.div
-                    key={item.label}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.3 + sectionIndex * 0.05 + itemIndex * 0.02 }}
-                    className={`flex items-center justify-between p-4 hover:bg-muted/30 transition-colors cursor-pointer ${
-                      itemIndex !== section.items.length - 1 ? "border-b border-border" : ""
-                    }`}
-                    onClick={item.action}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
-                        <item.icon className="w-5 h-5 text-primary" />
-                      </div>
-                      <div>
-                        <div className="font-medium">{item.label}</div>
-                        {item.value && !item.toggle && (
-                          <div className="text-sm text-muted-foreground">{item.value}</div>
-                        )}
-                      </div>
-                    </div>
-
-                    {item.toggle ? (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          item.onChange?.();
-                        }}
-                        className={`relative w-12 h-6 rounded-full transition-colors ${
-                          item.value ? "bg-primary" : "bg-muted"
-                        }`}
-                      >
-                        <motion.div
-                          initial={false}
-                          animate={{ x: item.value ? 24 : 2 }}
-                          transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                          className="absolute top-1 w-4 h-4 rounded-full bg-white"
-                        />
-                      </button>
-                    ) : (
-                      <ChevronRight className="w-5 h-5 text-muted-foreground" />
-                    )}
-                  </motion.div>
-                ))}
-              </div>
-            </motion.div>
-          ))}
+          <div className="flex-1">
+            <h2 className="text-2xl font-bold">{profile.displayName}</h2>
+            <p className="mt-1 text-white/80">{profile.email}</p>
+            <div className="mt-4 flex flex-wrap gap-4 text-sm text-white/90">
+              <span className="inline-flex items-center gap-2">
+                <Phone className="h-4 w-4" />
+                {profile.phone || "No phone added"}
+              </span>
+              <span className="inline-flex items-center gap-2">
+                <MapPin className="h-4 w-4" />
+                {profile.location || profile.country}
+              </span>
+              <span className="inline-flex items-center gap-2">
+                <Globe className="h-4 w-4" />
+                {profile.country} · {profile.currency}
+              </span>
+            </div>
+          </div>
         </div>
+      </motion.div>
 
-        {/* Account Stats */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-          className="bg-card border border-border rounded-xl p-6"
-        >
-          <h3 className="text-lg font-semibold mb-4">Account Statistics</h3>
-          <div className="grid sm:grid-cols-3 gap-4">
-            <div className="text-center p-4 rounded-lg bg-muted/30">
-              <div className="text-2xl font-bold text-primary">247</div>
-              <div className="text-sm text-muted-foreground mt-1">Total Transactions</div>
+      {message ? (
+        <div className={`rounded-2xl border p-4 text-sm ${message.tone === "ok" ? "border-income/20 bg-income/10 text-income" : "border-destructive/20 bg-destructive/10 text-destructive"}`} role="status">
+          {message.text}
+        </div>
+      ) : null}
+
+      <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="rounded-3xl border border-border bg-card p-6">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleSave();
+            }}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Personal details</h3>
+              <button
+                type="submit"
+                disabled={!dirty || saving}
+                className="inline-flex items-center gap-2 rounded-2xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary-glow disabled:opacity-50"
+              >
+                <Save className="h-4 w-4" />
+                {saving ? "Saving..." : "Save changes"}
+              </button>
             </div>
-            <div className="text-center p-4 rounded-lg bg-muted/30">
-              <div className="text-2xl font-bold text-income">$12,450</div>
-              <div className="text-sm text-muted-foreground mt-1">Total Saved</div>
+
+            <div className="grid gap-4">
+              <label className="grid gap-2">
+                <span className="text-sm text-muted-foreground">Display name</span>
+                <input type="text" value={draft.displayName} onChange={(event) => setDraft({ ...draft, displayName: event.target.value })} className="rounded-2xl border border-border bg-input-background px-4 py-3 outline-none transition-colors focus:border-primary" />
+              </label>
+
+              <label className="grid gap-2">
+                <span className="text-sm text-muted-foreground">Email</span>
+                <input type="email" value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} className="rounded-2xl border border-border bg-input-background px-4 py-3 outline-none transition-colors focus:border-primary" />
+              </label>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="grid gap-2">
+                  <span className="text-sm text-muted-foreground">Phone</span>
+                  <input type="tel" value={draft.phone} onChange={(event) => setDraft({ ...draft, phone: event.target.value })} className="rounded-2xl border border-border bg-input-background px-4 py-3 outline-none transition-colors focus:border-primary" />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm text-muted-foreground">Location</span>
+                  <input type="text" value={draft.location} onChange={(event) => setDraft({ ...draft, location: event.target.value })} className="rounded-2xl border border-border bg-input-background px-4 py-3 outline-none transition-colors focus:border-primary" />
+                </label>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="grid gap-2">
+                  <span className="text-sm text-muted-foreground">Country</span>
+                  <select value={draft.country} onChange={(event) => setDraft({ ...draft, country: event.target.value })} className="rounded-2xl border border-border bg-input-background px-4 py-3 outline-none transition-colors focus:border-primary">
+                    {COUNTRIES.map((country) => (
+                      <option key={country} value={country}>{country}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm text-muted-foreground">Currency</span>
+                  <input type="text" value={draft.country === profile.country ? profile.currency : getCountryConfig(draft.country).currency} readOnly className="rounded-2xl border border-border bg-muted/40 px-4 py-3 text-muted-foreground outline-none" />
+                </label>
+              </div>
             </div>
-            <div className="text-center p-4 rounded-lg bg-muted/30">
-              <div className="text-2xl font-bold text-secondary-bright">89%</div>
-              <div className="text-sm text-muted-foreground mt-1">Budget Efficiency</div>
-            </div>
-          </div>
+          </form>
         </motion.div>
 
-        {/* Data & Privacy */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.6 }}
-          className="bg-card border border-border rounded-xl p-6"
-        >
-          <h3 className="text-lg font-semibold mb-4">Data & Privacy</h3>
-          <div className="space-y-3">
-            <button className="w-full text-left px-4 py-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors flex items-center justify-between">
-              <span className="font-medium">Export Data</span>
-              <ChevronRight className="w-5 h-5 text-muted-foreground" />
-            </button>
-            <button className="w-full text-left px-4 py-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors flex items-center justify-between">
-              <span className="font-medium">Privacy Policy</span>
-              <ChevronRight className="w-5 h-5 text-muted-foreground" />
-            </button>
-            <button className="w-full text-left px-4 py-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors flex items-center justify-between">
-              <span className="font-medium">Terms of Service</span>
-              <ChevronRight className="w-5 h-5 text-muted-foreground" />
-            </button>
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+          <HealthScoreCard />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="rounded-2xl border border-border bg-card p-4 text-center">
+              <p className="text-2xl font-bold text-primary">{transactions.length}</p>
+              <p className="mt-1 text-sm text-muted-foreground">Transactions</p>
+            </div>
+            <div className="rounded-2xl border border-border bg-card p-4 text-center">
+              <p className={`text-2xl font-bold ${stats.saved >= 0 ? "text-income" : "text-expense"}`}>{formatMoney(stats.saved)}</p>
+              <p className="mt-1 text-sm text-muted-foreground">Net balance</p>
+            </div>
           </div>
-        </motion.div>
-
-        {/* Danger Zone */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.7 }}
-          className="bg-destructive/5 border border-destructive/20 rounded-xl p-6"
-        >
-          <h3 className="text-lg font-semibold mb-4 text-destructive">Danger Zone</h3>
-          <div className="space-y-3">
-            <button className="w-full px-4 py-3 rounded-lg border border-destructive/30 text-destructive hover:bg-destructive/10 transition-colors font-medium flex items-center justify-center gap-2">
-              <LogOut className="w-5 h-5" />
-              Sign Out
-            </button>
-            <button className="w-full px-4 py-3 rounded-lg border border-destructive/30 text-destructive hover:bg-destructive/10 transition-colors font-medium">
-              Delete Account
-            </button>
-          </div>
-        </motion.div>
-
-        {/* App Version */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.8 }}
-          className="text-center text-sm text-muted-foreground py-4"
-        >
-          <p>FinanceAI v2.0.0</p>
-          <p className="mt-1">© 2026 All rights reserved</p>
         </motion.div>
       </div>
+
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="rounded-3xl border border-border bg-card p-6">
+        <h3 className="mb-1 text-lg font-semibold">Preferences</h3>
+        <p className="mb-4 text-sm text-muted-foreground">Saved instantly on this device.</p>
+        <div className="space-y-3">
+          {preferences.map((item) => (
+            <div key={item.label} className="flex items-center justify-between rounded-2xl bg-muted/20 p-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-muted">
+                  <item.icon className="h-5 w-5 text-primary" />
+                </div>
+                <span className="font-medium">{item.label}</span>
+              </div>
+              <button
+                role="switch"
+                aria-checked={item.value}
+                aria-label={item.label}
+                onClick={item.onToggle}
+                className={`relative h-7 w-14 rounded-full transition-colors ${item.value ? "bg-primary" : "bg-switch-background"}`}
+              >
+                <div className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-transform ${item.value ? "translate-x-8" : "translate-x-1"}`} />
+              </button>
+            </div>
+          ))}
+        </div>
+      </motion.div>
+
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="grid gap-6 lg:grid-cols-2">
+        <div className="rounded-3xl border border-border bg-card p-6">
+          <h3 className="mb-1 flex items-center gap-2 text-lg font-semibold"><Database className="h-5 w-5 text-primary" /> Your data</h3>
+          <p className="mb-4 text-sm text-muted-foreground">Take your data anywhere, or bring in history from your bank.</p>
+          <div className="space-y-3">
+            <button onClick={exportAll} disabled={transactions.length === 0} className="flex w-full items-center gap-3 rounded-2xl bg-muted/20 px-4 py-3 text-left transition-colors hover:bg-muted/40 disabled:opacity-50">
+              <Download className="h-5 w-5 text-primary" />
+              <span className="font-medium">Export everything (CSV + JSON backup)</span>
+            </button>
+            <Link to="/transactions" className="flex w-full items-center gap-3 rounded-2xl bg-muted/20 px-4 py-3 transition-colors hover:bg-muted/40">
+              <Upload className="h-5 w-5 text-primary" />
+              <span className="font-medium">Import a bank CSV on the Transactions page</span>
+            </Link>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-destructive/20 bg-destructive/5 p-6">
+          <h3 className="mb-4 text-lg font-semibold text-destructive">Session</h3>
+          <button onClick={logout} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-destructive/30 px-4 py-3 font-medium text-destructive transition-colors hover:bg-destructive/10">
+            <LogOut className="h-5 w-5" />
+            Sign out
+          </button>
+        </div>
+      </motion.div>
     </div>
   );
 }

@@ -1,425 +1,405 @@
 import { useState } from "react";
-import { Plus, Users, DollarSign, Percent, User, Check, X, ChevronRight } from "lucide-react";
+import {
+  ArrowRight,
+  Check,
+  DollarSign,
+  Percent,
+  Plus,
+  Trash2,
+  UserPlus,
+  Users,
+  X,
+} from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-
-interface Friend {
-  id: number;
-  name: string;
-  avatar: string;
-}
-
-interface Split {
-  friendId: number;
-  amount: number;
-}
-
-interface Group {
-  id: number;
-  name: string;
-  members: Friend[];
-  totalAmount: number;
-  splits: Split[];
-  settledAmount: number;
-}
-
-const mockFriends: Friend[] = [
-  { id: 1, name: "Sarah Chen", avatar: "👩" },
-  { id: 2, name: "Mike Johnson", avatar: "👨" },
-  { id: 3, name: "Emily Rodriguez", avatar: "👧" },
-  { id: 4, name: "David Kim", avatar: "🧑" },
-];
-
-const mockGroups: Group[] = [
-  {
-    id: 1,
-    name: "Weekend Trip to Beach",
-    members: [mockFriends[0], mockFriends[1], mockFriends[2]],
-    totalAmount: 450,
-    splits: [
-      { friendId: 1, amount: 150 },
-      { friendId: 2, amount: 150 },
-      { friendId: 3, amount: 150 },
-    ],
-    settledAmount: 150,
-  },
-  {
-    id: 2,
-    name: "Team Dinner",
-    members: [mockFriends[1], mockFriends[3]],
-    totalAmount: 120,
-    splits: [
-      { friendId: 2, amount: 60 },
-      { friendId: 4, amount: 60 },
-    ],
-    settledAmount: 60,
-  },
-];
-
-type SplitMode = "equal" | "custom" | "percentage";
+import { getNetBalances, getSplitSummary, SELF_ID, useFinance, type Friend, type SplitMode } from "../lib/finance";
 
 export function SplitExpenses() {
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [groups, setGroups] = useState<Group[]>(mockGroups);
-
-  // Create modal state
+  const { groups, friends, profile, createGroup, deleteGroup, toggleSettlement, addFriend, formatMoney } = useFinance();
+  const [showModal, setShowModal] = useState(false);
   const [groupName, setGroupName] = useState("");
   const [totalAmount, setTotalAmount] = useState("");
   const [selectedFriends, setSelectedFriends] = useState<Friend[]>([]);
   const [splitMode, setSplitMode] = useState<SplitMode>("equal");
+  const [paidById, setPaidById] = useState(SELF_ID);
+  const [customValues, setCustomValues] = useState<Record<string, string>>({});
+  const [newFriend, setNewFriend] = useState("");
+  const [error, setError] = useState("");
 
-  const handleCreateGroup = () => {
-    if (!groupName || !totalAmount || selectedFriends.length === 0) return;
+  const summary = getSplitSummary(groups);
+  const netBalances = getNetBalances(groups);
+  const participants = [{ id: SELF_ID, name: "You" }, ...selectedFriends.map((friend) => ({ id: friend.id, name: friend.name }))];
+  const total = Number(totalAmount) || 0;
+  const enteredSum = participants.reduce((sum, participant) => sum + (Number(customValues[participant.id]) || 0), 0);
+  const target = splitMode === "custom" ? total : 100;
+  const remaining = target - enteredSum;
+  const splitValid = splitMode === "equal" || Math.abs(remaining) < 0.01;
 
-    const amount = parseFloat(totalAmount);
-    const equalSplit = amount / (selectedFriends.length + 1); // +1 for yourself
+  function toggleFriend(friend: Friend) {
+    setSelectedFriends((current) => {
+      const exists = current.some((entry) => entry.id === friend.id);
+      const next = exists ? current.filter((entry) => entry.id !== friend.id) : [...current, friend];
+      if (paidById !== SELF_ID && !next.some((entry) => entry.id === paidById)) {
+        setPaidById(SELF_ID);
+      }
+      return next;
+    });
+  }
 
-    const newGroup: Group = {
-      id: Date.now(),
-      name: groupName,
-      members: selectedFriends,
-      totalAmount: amount,
-      splits: selectedFriends.map((friend) => ({
-        friendId: friend.id,
-        amount: equalSplit,
-      })),
-      settledAmount: 0,
-    };
+  function handleAddFriend() {
+    const friend = addFriend(newFriend);
+    if (friend && !selectedFriends.some((entry) => entry.id === friend.id)) {
+      setSelectedFriends((current) => [...current, friend]);
+    }
+    setNewFriend("");
+  }
 
-    setGroups([newGroup, ...groups]);
-    setShowCreateModal(false);
+  function fillEvenly() {
+    const share = target / participants.length;
+    setCustomValues(Object.fromEntries(participants.map((participant) => [participant.id, share.toFixed(2)])));
+  }
+
+  function resetModal() {
+    setShowModal(false);
     setGroupName("");
     setTotalAmount("");
     setSelectedFriends([]);
-  };
+    setSplitMode("equal");
+    setPaidById(SELF_ID);
+    setCustomValues({});
+    setError("");
+  }
 
-  const toggleFriend = (friend: Friend) => {
-    if (selectedFriends.find((f) => f.id === friend.id)) {
-      setSelectedFriends(selectedFriends.filter((f) => f.id !== friend.id));
-    } else {
-      setSelectedFriends([...selectedFriends, friend]);
+  function handleCreateGroup() {
+    if (!groupName.trim()) return setError("Give the expense a name.");
+    if (!(total > 0)) return setError("Enter the total amount.");
+    if (selectedFriends.length === 0) return setError("Pick at least one person to split with.");
+    if (!splitValid) {
+      return setError(
+        splitMode === "custom"
+          ? `Shares must add up to ${formatMoney(total)} (${formatMoney(Math.abs(remaining))} ${remaining > 0 ? "unassigned" : "too much"}).`
+          : `Percentages must add up to 100% (currently ${enteredSum.toFixed(1)}%).`,
+      );
     }
-  };
+
+    createGroup({
+      name: groupName.trim(),
+      totalAmount: total,
+      mode: splitMode,
+      selectedFriends,
+      paidById,
+      customValues: Object.fromEntries(Object.entries(customValues).map(([key, value]) => [key, Number(value) || 0])),
+    });
+    resetModal();
+  }
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-6xl mx-auto p-4 lg:p-8 space-y-6">
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex items-center justify-between"
-        >
-          <div>
-            <h1 className="text-3xl font-bold">Split Expenses</h1>
-            <p className="text-muted-foreground mt-1">Manage shared costs with friends</p>
+    <div className="mx-auto max-w-6xl space-y-6 p-4 lg:p-8">
+      <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }} className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold">Split expenses</h1>
+          <p className="mt-1 text-muted-foreground">Track who paid, who still owes, and what has already been settled.</p>
+        </div>
+        <button onClick={() => setShowModal(true)} className="inline-flex items-center gap-2 rounded-2xl bg-primary px-5 py-3 font-medium text-primary-foreground shadow-lg shadow-primary/20 transition-colors hover:bg-primary-glow">
+          <Plus className="h-5 w-5" />
+          Split a bill
+        </button>
+      </motion.div>
+
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="grid gap-4 sm:grid-cols-2">
+        <div className="rounded-3xl bg-gradient-to-br from-income to-income-bright p-6 text-white shadow-lg shadow-income/20">
+          <div className="mb-2 flex items-center gap-2 text-sm opacity-90">
+            <Users className="h-5 w-5" />
+            You'll receive
           </div>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="px-6 py-3 rounded-xl bg-primary text-primary-foreground hover:bg-primary-glow transition-all shadow-lg shadow-primary/30 font-medium flex items-center gap-2"
-          >
-            <Plus className="w-5 h-5" />
-            <span className="hidden sm:inline">Create Group</span>
-          </button>
+          <p className="text-3xl font-bold">{formatMoney(summary.receive)}</p>
+          <p className="mt-2 text-sm opacity-90">Pending settlements owed back to you</p>
+        </div>
+        <div className="rounded-3xl bg-gradient-to-br from-expense to-expense-bright p-6 text-white shadow-lg shadow-expense/20">
+          <div className="mb-2 flex items-center gap-2 text-sm opacity-90">
+            <DollarSign className="h-5 w-5" />
+            You owe
+          </div>
+          <p className="text-3xl font-bold">{formatMoney(summary.owe)}</p>
+          <p className="mt-2 text-sm opacity-90">Unsettled shares where somebody else covered the bill</p>
+        </div>
+      </motion.div>
+
+      {netBalances.length > 0 ? (
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="rounded-3xl border border-border bg-card p-6">
+          <h2 className="mb-1 text-xl font-semibold">Settle up</h2>
+          <p className="mb-4 text-sm text-muted-foreground">Everything netted out across all your groups, one payment per person.</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {netBalances.map((entry) => (
+              <div key={entry.id} className="flex items-center gap-3 rounded-2xl bg-muted/30 p-4">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-muted text-lg">{entry.avatar}</div>
+                <div className="flex flex-1 items-center gap-2 text-sm">
+                  <span className="font-medium">{entry.amount > 0 ? entry.name : "You"}</span>
+                  <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-medium">{entry.amount > 0 ? "You" : entry.name}</span>
+                </div>
+                <span className={`font-semibold ${entry.amount > 0 ? "text-income" : "text-expense"}`}>{formatMoney(Math.abs(entry.amount))}</span>
+              </div>
+            ))}
+          </div>
         </motion.div>
+      ) : null}
 
-        {/* Summary Cards */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="grid sm:grid-cols-2 gap-4"
-        >
-          <div className="bg-gradient-to-br from-income to-income-bright rounded-xl p-6 text-income-foreground shadow-lg shadow-income/20">
-            <div className="flex items-center gap-2 mb-2 opacity-90">
-              <Users className="w-5 h-5" />
-              <span className="text-sm">You'll Receive</span>
-            </div>
-            <div className="text-3xl font-bold">$300.00</div>
-            <p className="text-sm opacity-90 mt-2">From 2 people</p>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+        <h2 className="text-xl font-semibold">Shared bills</h2>
+
+        {groups.length === 0 ? (
+          <div className="rounded-3xl border border-border bg-card p-12 text-center text-muted-foreground">
+            No shared bills yet. Split one to start tracking who owes what.
           </div>
+        ) : (
+          groups.map((group, index) => {
+            const owed = group.participants.filter((participant) => participant.id !== group.paidById);
+            const owedTotal = owed.reduce((sum, participant) => sum + participant.amount, 0);
+            const settledAmount = owed.filter((participant) => participant.settled).reduce((sum, participant) => sum + participant.amount, 0);
+            const progress = owedTotal > 0 ? (settledAmount / owedTotal) * 100 : 100;
+            const payer = group.participants.find((participant) => participant.id === group.paidById);
 
-          <div className="bg-gradient-to-br from-expense to-expense-bright rounded-xl p-6 text-expense-foreground shadow-lg shadow-expense/20">
-            <div className="flex items-center gap-2 mb-2 opacity-90">
-              <DollarSign className="w-5 h-5" />
-              <span className="text-sm">You Owe</span>
-            </div>
-            <div className="text-3xl font-bold">$60.00</div>
-            <p className="text-sm opacity-90 mt-2">To 1 person</p>
-          </div>
-        </motion.div>
+            return (
+              <motion.div key={group.id} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.04 }} className="rounded-3xl border border-border bg-card p-6">
+                <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <h3 className="text-xl font-semibold">{group.name}</h3>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Paid by {payer?.name ?? "Unknown"} on{" "}
+                      {new Date(group.createdAt).toLocaleDateString(profile.locale, { month: "short", day: "numeric", year: "numeric" })}
+                    </p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <div className="text-right">
+                      <p className="text-2xl font-bold">{formatMoney(group.totalAmount)}</p>
+                      <p className="text-sm capitalize text-muted-foreground">{group.mode} split</p>
+                    </div>
+                    <button
+                      onClick={() => window.confirm(`Delete "${group.name}"?`) && deleteGroup(group.id)}
+                      className="rounded-xl p-2 text-muted-foreground transition-colors hover:bg-expense/10 hover:text-expense"
+                      aria-label={`Delete ${group.name}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
 
-        {/* Groups List */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.2 }}
-          className="space-y-4"
-        >
-          <h2 className="text-xl font-semibold">Your Groups</h2>
+                <div className="mb-5">
+                  <div className="mb-2 flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Settled {formatMoney(settledAmount)} of {formatMoney(owedTotal)}</span>
+                    <span>{Math.round(progress)}%</span>
+                  </div>
+                  <div className="h-3 overflow-hidden rounded-full bg-muted">
+                    <div className="h-full rounded-full bg-gradient-to-r from-primary to-income" style={{ width: `${Math.min(100, progress)}%` }} />
+                  </div>
+                </div>
 
-          {groups.length === 0 ? (
-            <div className="bg-card border border-border rounded-xl p-12 text-center">
-              <Users className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-              <p className="text-muted-foreground">No groups yet. Create one to get started!</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {groups.map((group, index) => (
-                <motion.div
-                  key={group.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.3 + index * 0.05 }}
-                  className="bg-card border border-border rounded-xl p-6 hover:border-primary transition-all cursor-pointer group"
-                >
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <h3 className="text-lg font-semibold group-hover:text-primary transition-colors">
-                        {group.name}
-                      </h3>
-                      <div className="flex items-center gap-2 mt-2">
-                        {group.members.map((member) => (
-                          <div
-                            key={member.id}
-                            className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-sm"
-                            title={member.name}
+                <div className="space-y-3">
+                  {group.participants.map((participant) => (
+                    <div key={`${group.id}-${participant.id}`} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-muted/30 p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-muted text-lg">{participant.avatar}</div>
+                        <div>
+                          <p className="font-medium">{participant.name}</p>
+                          <p className="text-xs text-muted-foreground">{participant.percentage.toFixed(1)}% share</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <p className="font-semibold">{formatMoney(participant.amount)}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {participant.id === group.paidById ? "Paid the bill" : participant.settled ? "Settled" : "Pending"}
+                          </p>
+                        </div>
+                        {participant.id !== group.paidById ? (
+                          <button
+                            onClick={() => toggleSettlement(group.id, participant.id)}
+                            className={`rounded-2xl px-4 py-2 text-sm font-medium transition-colors ${participant.settled ? "bg-income/15 text-income hover:bg-income/20" : "bg-primary/10 text-primary hover:bg-primary/20"}`}
                           >
-                            {member.avatar}
+                            {participant.settled ? "Mark pending" : "Mark settled"}
+                          </button>
+                        ) : (
+                          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-income text-white">
+                            <Check className="h-5 w-5" />
                           </div>
-                        ))}
-                        <span className="text-sm text-muted-foreground ml-2">
-                          {group.members.length + 1} people
-                        </span>
+                        )}
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-2xl font-bold">${group.totalAmount.toFixed(2)}</div>
-                      <div className="text-sm text-muted-foreground">Total</div>
-                    </div>
-                  </div>
+                  ))}
+                </div>
+              </motion.div>
+            );
+          })
+        )}
+      </motion.div>
 
-                  {/* Progress Bar */}
-                  <div className="mb-4">
-                    <div className="flex items-center justify-between text-sm mb-2">
-                      <span className="text-muted-foreground">Settlement Progress</span>
-                      <span className="font-medium">
-                        {Math.round((group.settledAmount / group.totalAmount) * 100)}%
-                      </span>
-                    </div>
-                    <div className="h-2 bg-muted rounded-full overflow-hidden">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{
-                          width: `${(group.settledAmount / group.totalAmount) * 100}%`,
-                        }}
-                        transition={{ duration: 0.8, delay: 0.5 + index * 0.1 }}
-                        className="h-full bg-gradient-to-r from-primary to-income rounded-full"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Split Details */}
-                  <div className="space-y-2">
-                    {group.members.map((member) => {
-                      const split = group.splits.find((s) => s.friendId === member.id);
-                      const isSettled = split && split.amount <= group.settledAmount;
-                      return (
-                        <div
-                          key={member.id}
-                          className="flex items-center justify-between p-3 rounded-lg bg-muted/30"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                              {member.avatar}
-                            </div>
-                            <span className="font-medium">{member.name}</span>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span className="font-semibold">${split?.amount.toFixed(2)}</span>
-                            {isSettled && (
-                              <div className="w-6 h-6 rounded-full bg-income flex items-center justify-center">
-                                <Check className="w-4 h-4 text-income-foreground" />
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Actions */}
-                  <div className="mt-4 pt-4 border-t border-border flex gap-3">
-                    <button className="flex-1 px-4 py-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors font-medium">
-                      Settle Up
-                    </button>
-                    <button className="flex-1 px-4 py-2 rounded-lg bg-muted hover:bg-muted/70 transition-colors font-medium">
-                      View Details
-                    </button>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          )}
-        </motion.div>
-      </div>
-
-      {/* Create Group Modal */}
       <AnimatePresence>
-        {showCreateModal && (
+        {showModal ? (
           <>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-40 bg-black/60" onClick={resetModal} />
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowCreateModal(false)}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="fixed inset-4 lg:inset-auto lg:left-1/2 lg:top-1/2 lg:-translate-x-1/2 lg:-translate-y-1/2 lg:w-full lg:max-w-2xl bg-card border border-border rounded-2xl p-6 z-50 overflow-auto max-h-[90vh]"
+              initial={{ opacity: 0, y: 24, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 24, scale: 0.96 }}
+              className="fixed inset-4 z-50 overflow-auto rounded-3xl border border-border bg-card p-6 lg:inset-auto lg:left-1/2 lg:top-1/2 lg:max-h-[90vh] lg:w-full lg:max-w-2xl lg:-translate-x-1/2 lg:-translate-y-1/2"
+              role="dialog"
+              aria-modal="true"
             >
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold">Create Split Group</h2>
-                <button
-                  onClick={() => setShowCreateModal(false)}
-                  className="w-10 h-10 rounded-lg hover:bg-muted transition-colors flex items-center justify-center"
-                >
-                  <X className="w-5 h-5" />
+              <div className="mb-6 flex items-center justify-between">
+                <h2 className="text-2xl font-bold">Split a bill</h2>
+                <button onClick={resetModal} className="rounded-xl p-2 hover:bg-muted" aria-label="Close">
+                  <X className="h-5 w-5" />
                 </button>
               </div>
 
-              <div className="space-y-6">
-                {/* Group Name */}
-                <div>
-                  <label className="block text-sm text-muted-foreground mb-2">Group Name</label>
+              <div className="grid gap-6">
+                <label className="grid gap-2">
+                  <span className="text-sm text-muted-foreground">What was it for?</span>
                   <input
                     type="text"
                     value={groupName}
-                    onChange={(e) => setGroupName(e.target.value)}
-                    placeholder="e.g., Weekend Trip, Team Dinner"
-                    className="w-full bg-input-background border border-border rounded-xl px-4 py-3 focus:outline-none focus:border-primary transition-colors"
+                    onChange={(event) => setGroupName(event.target.value)}
+                    className="rounded-2xl border border-border bg-input-background px-4 py-3 outline-none transition-colors focus:border-primary"
+                    placeholder="Weekend trip, team dinner, shared groceries..."
                   />
-                </div>
+                </label>
 
-                {/* Total Amount */}
-                <div>
-                  <label className="block text-sm text-muted-foreground mb-2">Total Amount</label>
-                  <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl font-bold text-muted-foreground">
-                      $
-                    </span>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="grid gap-2">
+                    <span className="text-sm text-muted-foreground">Total amount ({profile.currency})</span>
                     <input
                       type="number"
+                      min="0"
+                      step="0.01"
                       value={totalAmount}
-                      onChange={(e) => setTotalAmount(e.target.value)}
-                      placeholder="0.00"
-                      className="w-full bg-input-background border border-border rounded-xl pl-10 pr-4 py-3 text-xl font-bold focus:outline-none focus:border-primary transition-colors"
+                      onChange={(event) => setTotalAmount(event.target.value)}
+                      className="rounded-2xl border border-border bg-input-background px-4 py-3 outline-none transition-colors focus:border-primary"
                     />
+                  </label>
+
+                  <label className="grid gap-2">
+                    <span className="text-sm text-muted-foreground">Who paid?</span>
+                    <select value={paidById} onChange={(event) => setPaidById(event.target.value)} className="rounded-2xl border border-border bg-input-background px-4 py-3 outline-none transition-colors focus:border-primary">
+                      {participants.map((participant) => (
+                        <option key={participant.id} value={participant.id}>{participant.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <div>
+                  <span className="mb-2 block text-sm text-muted-foreground">Split mode</span>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    {([
+                      { value: "equal", label: "Equal", icon: Users },
+                      { value: "custom", label: "Exact amounts", icon: DollarSign },
+                      { value: "percentage", label: "Percentage", icon: Percent },
+                    ] as const).map((mode) => (
+                      <button
+                        key={mode.value}
+                        onClick={() => {
+                          setSplitMode(mode.value);
+                          setCustomValues({});
+                        }}
+                        className={`rounded-2xl border px-4 py-3 transition-all ${splitMode === mode.value ? "border-primary bg-primary text-primary-foreground" : "border-border bg-input-background"}`}
+                      >
+                        <mode.icon className="mx-auto mb-2 h-5 w-5" />
+                        <div className="text-sm">{mode.label}</div>
+                      </button>
+                    ))}
                   </div>
                 </div>
 
-                {/* Split Mode */}
                 <div>
-                  <label className="block text-sm text-muted-foreground mb-2">Split Mode</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    <button
-                      onClick={() => setSplitMode("equal")}
-                      className={`px-4 py-3 rounded-lg border transition-all ${
-                        splitMode === "equal"
-                          ? "bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/20"
-                          : "bg-input-background border-border hover:border-primary"
-                      }`}
-                    >
-                      <Users className="w-5 h-5 mx-auto mb-1" />
-                      <div className="text-sm">Equal</div>
-                    </button>
-                    <button
-                      onClick={() => setSplitMode("custom")}
-                      className={`px-4 py-3 rounded-lg border transition-all ${
-                        splitMode === "custom"
-                          ? "bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/20"
-                          : "bg-input-background border-border hover:border-primary"
-                      }`}
-                    >
-                      <DollarSign className="w-5 h-5 mx-auto mb-1" />
-                      <div className="text-sm">Custom</div>
-                    </button>
-                    <button
-                      onClick={() => setSplitMode("percentage")}
-                      className={`px-4 py-3 rounded-lg border transition-all ${
-                        splitMode === "percentage"
-                          ? "bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/20"
-                          : "bg-input-background border-border hover:border-primary"
-                      }`}
-                    >
-                      <Percent className="w-5 h-5 mx-auto mb-1" />
-                      <div className="text-sm">Percent</div>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Select Friends */}
-                <div>
-                  <label className="block text-sm text-muted-foreground mb-2">Add Friends</label>
-                  <div className="grid sm:grid-cols-2 gap-3">
-                    {mockFriends.map((friend) => {
-                      const isSelected = selectedFriends.find((f) => f.id === friend.id);
+                  <span className="mb-2 block text-sm text-muted-foreground">Split with</span>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {friends.map((friend) => {
+                      const selected = selectedFriends.some((entry) => entry.id === friend.id);
                       return (
                         <button
                           key={friend.id}
                           onClick={() => toggleFriend(friend)}
-                          className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${
-                            isSelected
-                              ? "bg-primary/10 border-primary"
-                              : "bg-input-background border-border hover:border-primary"
-                          }`}
+                          className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition-all ${selected ? "border-primary bg-primary/10" : "border-border bg-input-background"}`}
                         >
-                          <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-xl">
-                            {friend.avatar}
-                          </div>
-                          <span className="flex-1 text-left font-medium">{friend.name}</span>
-                          {isSelected && <Check className="w-5 h-5 text-primary" />}
+                          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-muted text-lg">{friend.avatar}</div>
+                          <span className="flex-1 font-medium">{friend.name}</span>
+                          {selected ? <Check className="h-5 w-5 text-primary" /> : null}
                         </button>
                       );
                     })}
                   </div>
+                  <form
+                    className="mt-3 flex gap-2"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      handleAddFriend();
+                    }}
+                  >
+                    <input
+                      value={newFriend}
+                      onChange={(event) => setNewFriend(event.target.value)}
+                      placeholder="Add someone new..."
+                      className="flex-1 rounded-2xl border border-border bg-input-background px-4 py-2 outline-none focus:border-primary"
+                    />
+                    <button type="submit" disabled={!newFriend.trim()} className="inline-flex items-center gap-2 rounded-2xl border border-border px-4 py-2 text-sm hover:border-primary disabled:opacity-50">
+                      <UserPlus className="h-4 w-4" /> Add
+                    </button>
+                  </form>
                 </div>
 
-                {/* Summary */}
-                {selectedFriends.length > 0 && totalAmount && (
-                  <div className="bg-primary/5 border border-primary/20 rounded-xl p-4">
-                    <div className="text-sm text-muted-foreground mb-2">Split Preview</div>
-                    <div className="text-lg font-semibold">
-                      ${(parseFloat(totalAmount) / (selectedFriends.length + 1)).toFixed(2)}{" "}
-                      <span className="text-sm font-normal text-muted-foreground">per person</span>
+                {splitMode !== "equal" && selectedFriends.length > 0 ? (
+                  <div className="space-y-3 rounded-2xl border border-border bg-input-background/60 p-4">
+                    <div className="flex items-center justify-between gap-2 text-sm">
+                      <span className="text-muted-foreground">{splitMode === "custom" ? "How much does each person owe?" : "What percentage does each person cover?"}</span>
+                      <button onClick={fillEvenly} className="text-xs text-primary hover:underline">Fill evenly</button>
                     </div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      {selectedFriends.length + 1} people total (including you)
-                    </div>
+                    {participants.map((participant) => (
+                      <label key={participant.id} className="flex items-center justify-between gap-4">
+                        <span className="font-medium">{participant.name}</span>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={customValues[participant.id] ?? ""}
+                            onChange={(event) => setCustomValues((current) => ({ ...current, [participant.id]: event.target.value }))}
+                            className="w-32 rounded-2xl border border-border bg-card px-4 py-2 outline-none transition-colors focus:border-primary"
+                          />
+                          <span className="w-6 text-sm text-muted-foreground">{splitMode === "percentage" ? "%" : ""}</span>
+                        </div>
+                      </label>
+                    ))}
+                    <p className={`text-sm ${splitValid ? "text-income" : "text-expense"}`}>
+                      {splitValid
+                        ? "Adds up. Ready to go."
+                        : splitMode === "custom"
+                          ? `${formatMoney(Math.abs(remaining))} ${remaining > 0 ? "still to assign" : "over the total"}`
+                          : `${Math.abs(remaining).toFixed(1)}% ${remaining > 0 ? "still to assign" : "over 100%"}`}
+                    </p>
                   </div>
-                )}
+                ) : null}
 
-                {/* Actions */}
-                <div className="flex gap-3 pt-4">
-                  <button
-                    onClick={() => setShowCreateModal(false)}
-                    className="flex-1 px-6 py-3 rounded-xl border border-border hover:bg-muted transition-colors font-medium"
-                  >
+                {total > 0 && selectedFriends.length > 0 && splitMode === "equal" ? (
+                  <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm text-muted-foreground">
+                    Each of the {participants.length} people pays about {formatMoney(total / participants.length)}.
+                  </div>
+                ) : null}
+
+                {error ? <p className="rounded-2xl border border-expense/20 bg-expense/10 p-3 text-sm text-expense">{error}</p> : null}
+
+                <div className="flex gap-3">
+                  <button onClick={resetModal} className="flex-1 rounded-2xl border border-border px-4 py-3 font-medium transition-colors hover:bg-muted">
                     Cancel
                   </button>
-                  <button
-                    onClick={handleCreateGroup}
-                    disabled={!groupName || !totalAmount || selectedFriends.length === 0}
-                    className="flex-1 px-6 py-3 rounded-xl bg-primary text-primary-foreground hover:bg-primary-glow transition-all shadow-lg shadow-primary/30 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Create Group
+                  <button onClick={handleCreateGroup} className="flex-1 rounded-2xl bg-primary px-4 py-3 font-medium text-primary-foreground transition-colors hover:bg-primary-glow">
+                    Save split
                   </button>
                 </div>
               </div>
             </motion.div>
           </>
-        )}
+        ) : null}
       </AnimatePresence>
     </div>
   );

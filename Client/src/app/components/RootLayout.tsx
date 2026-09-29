@@ -1,4 +1,4 @@
-import { Outlet, NavLink } from "react-router";
+import { Outlet, NavLink, Navigate } from "react-router";
 import {
   LayoutDashboard,
   ScanLine,
@@ -7,8 +7,13 @@ import {
   Sparkles,
   Wallet,
   User,
-  TrendingUp
+  TrendingUp,
+  Wifi,
+  WifiOff,
+  LoaderCircle,
+  LogOut,
 } from "lucide-react";
+import { useFinance } from "../lib/finance";
 
 const navItems = [
   { path: "/", icon: LayoutDashboard, label: "Dashboard" },
@@ -20,20 +25,62 @@ const navItems = [
   { path: "/profile", icon: User, label: "Profile" },
 ];
 
-export function RootLayout() {
+function BackendIndicator() {
+  const { backendStatus, reconnect } = useFinance();
+
+  if (backendStatus === "checking") {
+    return (
+      <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground">
+        <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+        Connecting backend
+      </div>
+    );
+  }
+
+  if (backendStatus === "connected") {
+    return (
+      <div className="inline-flex items-center gap-2 rounded-full border border-income/20 bg-income/10 px-3 py-1.5 text-xs text-income">
+        <Wifi className="h-3.5 w-3.5" />
+        Backend connected
+      </div>
+    );
+  }
+
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
-      {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex lg:flex-col w-64 bg-sidebar border-r border-sidebar-border">
-        <div className="p-6">
-          <div className="flex items-center gap-3 mb-8">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-secondary-bright flex items-center justify-center">
-              <TrendingUp className="w-6 h-6 text-primary-foreground" />
+    <button
+      onClick={() => void reconnect()}
+      title="Backend unreachable. Changes are kept on this device. Click to retry."
+      className="inline-flex items-center gap-2 rounded-full border border-expense/20 bg-expense/10 px-3 py-1.5 text-xs text-expense transition-colors hover:bg-expense/20"
+    >
+      <WifiOff className="h-3.5 w-3.5" />
+      Offline · retry
+    </button>
+  );
+}
+
+export function RootLayout() {
+  const { profile, isAuthenticated, loading, logout } = useFinance();
+
+  if (!loading && !isAuthenticated) {
+    return <Navigate to="/auth" replace />;
+  }
+
+  return (
+    <div className="flex min-h-screen bg-background">
+      <aside className="hidden w-72 border-r border-sidebar-border bg-sidebar lg:flex lg:flex-col">
+        <div className="flex h-full flex-col p-6">
+          <div className="mb-8 flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-secondary-bright">
+              <TrendingUp className="h-6 w-6 text-white" />
             </div>
             <div>
-              <h1 className="font-semibold text-lg">FinanceAI</h1>
-              <p className="text-xs text-muted-foreground">Smart Money</p>
+              <h1 className="text-lg font-semibold">FinanceAI</h1>
+              <p className="text-xs text-muted-foreground">Smart money command center</p>
             </div>
+          </div>
+
+          <div className="mb-6">
+            <BackendIndicator />
           </div>
 
           <nav className="space-y-1">
@@ -43,7 +90,7 @@ export function RootLayout() {
                 to={item.path}
                 end={item.path === "/"}
                 className={({ isActive }) =>
-                  `flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
+                  `flex items-center gap-3 rounded-xl px-4 py-3 transition-all ${
                     isActive
                       ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-lg shadow-primary/20"
                       : "text-sidebar-foreground hover:bg-sidebar-accent"
@@ -52,48 +99,70 @@ export function RootLayout() {
               >
                 {({ isActive }) => (
                   <>
-                    <item.icon className="w-5 h-5" />
+                    <item.icon className="h-5 w-5" />
                     <span className="font-medium">{item.label}</span>
-                    {isActive && (
-                      <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary-glow animate-glow" />
-                    )}
+                    {isActive ? <div className="ml-auto h-2 w-2 rounded-full bg-primary-glow" /> : null}
                   </>
                 )}
               </NavLink>
             ))}
           </nav>
+
+          <div className="mt-auto rounded-2xl border border-border bg-card p-4">
+            <p className="text-sm font-semibold">{profile.displayName}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{profile.email}</p>
+            <button
+              onClick={logout}
+              className="mt-4 inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              Sign out
+            </button>
+          </div>
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-auto">
-        <div className="pb-20 lg:pb-0">
-          <Outlet />
-        </div>
-      </main>
+      <div className="flex min-h-screen flex-1 flex-col">
+        <header className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur">
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 lg:px-8">
+            <div>
+              <p className="text-sm text-muted-foreground">Welcome back</p>
+              <h2 className="text-xl font-semibold">{profile.displayName}</h2>
+            </div>
+            <div className="flex items-center gap-3">
+              <BackendIndicator />
+              <button
+                onClick={logout}
+                className="rounded-xl border border-border px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:hidden"
+              >
+                Sign out
+              </button>
+            </div>
+          </div>
+        </header>
 
-      {/* Mobile Bottom Navigation */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-sidebar border-t border-sidebar-border glass z-50">
-        <div className="flex items-center justify-around px-2 py-2">
-          {navItems.slice(0, 5).map((item) => (
+        <main className="flex-1 pb-24 lg:pb-0">
+          <Outlet />
+        </main>
+      </div>
+
+      <nav className="glass fixed inset-x-0 bottom-0 z-50 border-t border-sidebar-border lg:hidden">
+        <div className="flex gap-1 overflow-x-auto px-2 py-2">
+          {navItems.map((item) => (
             <NavLink
               key={item.path}
               to={item.path}
               end={item.path === "/"}
               className={({ isActive }) =>
-                `flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-all duration-200 ${
-                  isActive
-                    ? "text-primary"
-                    : "text-muted-foreground"
+                `min-w-max rounded-xl px-3 py-2 text-xs transition-all ${
+                  isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground"
                 }`
               }
             >
-              {({ isActive }) => (
-                <>
-                  <item.icon className={`w-5 h-5 ${isActive ? "animate-float" : ""}`} />
-                  <span className="text-xs font-medium">{item.label}</span>
-                </>
-              )}
+              <div className="flex items-center gap-2">
+                <item.icon className="h-4 w-4" />
+                <span>{item.label}</span>
+              </div>
             </NavLink>
           ))}
         </div>

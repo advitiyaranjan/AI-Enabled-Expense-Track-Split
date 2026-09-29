@@ -10,6 +10,10 @@ class User(Base):
     name = Column(String, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
+    phone = Column(String, nullable=True)
+    location = Column(String, nullable=True)
+    country = Column(String, nullable=False, default="United States")
+    currency = Column(String, nullable=False, default="USD")
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

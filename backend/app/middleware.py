@@ -1,6 +1,7 @@
 import time
 from starlette.middleware.base import BaseHTTPMiddleware
-from fastapi import Request, HTTPException
+from starlette.responses import JSONResponse
+from fastapi import Request
 
 
 class SimpleRateLimiterMiddleware(BaseHTTPMiddleware):
@@ -11,15 +12,21 @@ class SimpleRateLimiterMiddleware(BaseHTTPMiddleware):
         self.clients = {}
 
     async def dispatch(self, request: Request, call_next):
+        # CORS preflights should never count against the limit
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
         client = request.client.host if request.client else "unknown"
         now = time.time()
-        window = self.window_seconds
-        calls = self.clients.get(client, [])
-        # remove old
-        calls = [ts for ts in calls if ts > now - window]
+        calls = [ts for ts in self.clients.get(client, []) if ts > now - self.window_seconds]
         if len(calls) >= self.max_requests:
-            raise HTTPException(status_code=429, detail="Too many requests")
+            # Raising HTTPException inside BaseHTTPMiddleware surfaces as a 500, so respond directly
+            retry_after = max(1, int(self.window_seconds - (now - calls[0])))
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Too many requests"},
+                headers={"Retry-After": str(retry_after)},
+            )
         calls.append(now)
         self.clients[client] = calls
-        response = await call_next(request)
-        return response
+        return await call_next(request)

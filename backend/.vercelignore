@@ -1,0 +1,15 @@
+.venv
+venv
+__pycache__
+.pytest_cache
+.tmp_pytest
+tests
+data
+uploads
+*.db
+*.db-journal
+*.log
+.env
+Dockerfile
+docker-compose.yml
+sql
