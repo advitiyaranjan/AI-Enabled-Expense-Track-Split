@@ -71,6 +71,22 @@ def ai_probe(x_probe_token: str | None = Header(default=None)):
     timed("quick_add", lambda: ai_service.parse_transaction("coffee 4.50 at Starbucks yesterday", today, {}))
     timed("split", lambda: ai_service.parse_split("Dinner at Barbeque Nation 2400 with Sarah and Mike, Mike paid", ["Sarah Chen", "Mike Johnson"]))
     timed("receipt_text", lambda: openai_service.parse_receipt_text("FRESH MART\n14/04/2026\nMilk 3.50\nBread 2.25\nSubtotal 5.75\nTax 0.46\nTotal 6.21"))
+    def receipt_photo():
+        from io import BytesIO
+        from PIL import Image, ImageDraw, ImageFont
+        image = Image.new("RGB", (600, 700), "white")
+        draw = ImageDraw.Draw(image)
+        try:
+            font = ImageFont.load_default(size=32)
+        except TypeError:  # older Pillow
+            font = ImageFont.load_default()
+        for row, line in enumerate(["CAFE MOCHA", "Date: 21/09/2026", "Latte 180.00", "Croissant 120.00", "GST 15.00", "TOTAL 315.00"]):
+            draw.text((40, 60 + row * 90), line, fill="black", font=font)
+        buffer = BytesIO()
+        image.save(buffer, format="JPEG", quality=90)
+        return openai_service.parse_receipt_image(buffer.getvalue(), "probe.jpg")
+
+    timed("receipt_photo", receipt_photo)
     ctx = ai_service.build_context(
         [{"id": 1, "name": "Salary", "amount": 50000, "date": today.replace(day=1), "category": "Income", "type": "income"},
          {"id": 2, "name": "Rent", "amount": -15000, "date": today.replace(day=2), "category": "Utilities", "type": "expense"}],
