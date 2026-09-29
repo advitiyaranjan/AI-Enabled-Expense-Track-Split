@@ -15,6 +15,8 @@ import {
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { useFinance } from "../lib/finance";
 
@@ -72,7 +74,10 @@ function OfflineBanner() {
 }
 
 export function RootLayout() {
-  const { profile, isAuthenticated, loading, logout } = useFinance();
+  const { profile, isAuthenticated, loading, logout, updateProfile } = useFinance();
+  const toggleTheme = () => void updateProfile({ darkMode: !profile.darkMode });
+  const ThemeIcon = profile.darkMode ? Sun : Moon;
+  const themeLabel = profile.darkMode ? "Light mode" : "Dark mode";
   const [collapsed, setCollapsed] = useState(() => {
     try {
       return localStorage.getItem("sidebar-collapsed") === "1";
@@ -153,17 +158,27 @@ export function RootLayout() {
             ))}
           </nav>
 
+          <button
+            onClick={toggleTheme}
+            title={themeLabel}
+            aria-label={themeLabel}
+            className={`mt-auto mb-3 flex items-center gap-3 rounded-xl py-3 text-sidebar-foreground transition-colors hover:bg-sidebar-accent ${collapsed ? "justify-center px-0" : "px-4"}`}
+          >
+            <ThemeIcon className="h-5 w-5 shrink-0" />
+            {collapsed ? null : <span className="font-medium">{themeLabel}</span>}
+          </button>
+
           {collapsed ? (
             <button
               onClick={logout}
               title="Sign out"
               aria-label="Sign out"
-              className="mt-auto flex justify-center rounded-xl py-3 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="flex justify-center rounded-xl py-3 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <LogOut className="h-5 w-5" />
             </button>
           ) : (
-            <div className="mt-auto rounded-2xl border border-border bg-card p-4">
+            <div className="rounded-2xl border border-border bg-card p-4">
               <p className="truncate text-sm font-semibold">{profile.displayName}</p>
               <p className="mt-1 truncate text-xs text-muted-foreground">{profile.email}</p>
               <button
