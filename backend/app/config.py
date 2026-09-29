@@ -34,6 +34,11 @@ class Settings:
     # OAuth Client ID from Google Cloud Console (Web application). Empty = Google sign-in hidden
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "").strip()
 
+    # Google Gemini (free tier via aistudio.google.com). When set, Gemini is used instead of OpenAI
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "").strip()
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+    GEMINI_MODEL_FAST: str = os.getenv("GEMINI_MODEL_FAST", "gemini-3.5-flash-lite")
+
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     # Model for the assistant chat (reasoning over the user's data); comma-separated, best first
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4.1")

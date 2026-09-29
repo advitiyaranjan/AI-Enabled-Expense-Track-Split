@@ -364,10 +364,10 @@ def chat(message: str, history: list[dict], ctx: dict) -> dict:
             return {"reply": reply, "source": "ai", "suggestions": SUGGESTIONS}
         # OpenAI is configured but couldn't answer: say why rather than silently switching engines
         reason = {
-            "insufficient_quota": "the OpenAI account is out of credits",
-            "invalid_api_key": "the OpenAI API key was rejected",
-            "rate_limited": "OpenAI is rate-limiting requests right now",
-        }.get(last_error() or "", "OpenAI didn't respond in time")
+            "insufficient_quota": "the AI account is out of credits",
+            "invalid_api_key": "the AI API key was rejected",
+            "rate_limited": "the free AI quota is busy right now, try again in a minute",
+        }.get(last_error() or "", "the AI service didn't respond in time")
         return {"reply": rules_reply(message, ctx), "source": "rules", "suggestions": SUGGESTIONS,
                 "notice": f"AI unavailable ({reason}). This answer came from the built-in rules."}
     return {"reply": rules_reply(message, ctx), "source": "rules", "suggestions": SUGGESTIONS}

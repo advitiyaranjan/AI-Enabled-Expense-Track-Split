@@ -63,8 +63,10 @@ class FakeClient:
 @pytest.fixture
 def fake(monkeypatch):
     def install(available, **options):
-        client = FakeClient(available, **options)
+        gemini_key = options.get("gemini_key", "")
+        client = FakeClient(available, **{k: v for k, v in options.items() if k != "gemini_key"})
         monkeypatch.setattr(svc.settings, "OPENAI_API_KEY", "sk-test")
+        monkeypatch.setattr(svc.settings, "GEMINI_API_KEY", gemini_key)
         monkeypatch.setattr(svc.settings, "OPENAI_MODEL", "gpt-4.1")
         monkeypatch.setattr(svc.settings, "OPENAI_MODEL_FAST", "gpt-4.1-mini")
         monkeypatch.setattr(svc, "get_client", lambda: client)
@@ -176,3 +178,34 @@ def test_chat_falls_back_to_lighter_openai_model_before_rules(fake):
     ctx = ai_service.build_context([], [], "INR", date(2026, 9, 30))
     reply = ai_service.chat("hello", [], ctx)
     assert reply["source"] == "ai" and client.calls[-1]["model"] == "gpt-4.1-mini"
+
+
+GEMINI_MODELS = {"gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash"}
+
+
+def test_gemini_key_switches_provider_and_endpoint(monkeypatch):
+    monkeypatch.setattr(svc.settings, "GEMINI_API_KEY", "gm-test")
+    assert svc.provider() == "gemini" and svc.ai_enabled()
+    assert "generativelanguage.googleapis.com" in str(svc.get_client().base_url)
+    monkeypatch.setattr(svc.settings, "GEMINI_API_KEY", "")
+    monkeypatch.setattr(svc.settings, "OPENAI_API_KEY", "sk-test")
+    assert svc.provider() == "openai" and "api.openai.com" in str(svc.get_client().base_url)
+
+
+def test_gemini_free_models_per_task(fake):
+    fake(GEMINI_MODELS | EVERYTHING, gemini_key="gm-test")
+    assert svc.resolve_model("fast") == "gemini-3.5-flash-lite"
+    assert svc.resolve_model("smart") == "gemini-3.8-flash"
+    assert svc.ai_status()["provider"] == "gemini"
+
+
+def test_gemini3_gets_lowest_reasoning_instead_of_none(fake):
+    client = fake(GEMINI_MODELS, gemini_key="gm-test")
+    svc.chat_json([{"role": "user", "content": "hi"}])
+    call = client.calls[-1]
+    assert call["model"] == "gemini-3.5-flash-lite" and call["reasoning_effort"] == "low" and "temperature" not in call
+
+
+def test_gemini_falls_back_within_free_models(fake):
+    fake({"gemini-2.5-flash"}, gemini_key="gm-test")
+    assert svc.resolve_model("smart") == "gemini-2.5-flash"

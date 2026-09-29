@@ -22,9 +22,15 @@ TIER_DEFAULTS = {
     "fast": ["gpt-4.1-mini", "gpt-4o-mini"],
     "smart": ["gpt-4.1", "gpt-4o", "gpt-4.1-mini", "gpt-4o-mini"],
 }
-REASONING_PREFIXES = ("gpt-5", "gpt-6", "o1", "o3", "o4")
+# Gemini free-tier models, reached through Google's OpenAI-compatible endpoint
+GEMINI_TIER_DEFAULTS = {
+    "fast": ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash-lite"],
+    "smart": ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-3.5-flash-lite"],
+}
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+REASONING_PREFIXES = ("gpt-5", "gpt-6", "o1", "o3", "o4", "gemini-3", "gemini-2.5")
 # Only some models accept reasoning_effort "none"; others get their lowest supported level
-NONE_EFFORT_MODELS = ("gpt-6-luna",)
+NONE_EFFORT_MODELS = ("gpt-6-luna", "gemini-2.5-flash")
 # Reasoning tokens count against max_completion_tokens, so leave room beyond the visible answer
 REASONING_HEADROOM = {"none": 500, "low": 3000, "medium": 8000, "high": 16000}
 
@@ -32,20 +38,31 @@ _model_state: dict = {tier: {"model": None, "checked": False} for tier in TIER_D
 _account: dict = {"error": None}  # account-wide problems (bad key, no credits) shared by both tiers
 
 
+def provider() -> str:
+    return "gemini" if settings.GEMINI_API_KEY else "openai"
+
+
 def ai_enabled() -> bool:
-    return bool(settings.OPENAI_API_KEY) and OpenAI is not None
+    return bool(settings.GEMINI_API_KEY or settings.OPENAI_API_KEY) and OpenAI is not None
 
 
 def get_client():
     if not ai_enabled():
         return None
+    if provider() == "gemini":
+        return OpenAI(api_key=settings.GEMINI_API_KEY, base_url=GEMINI_BASE_URL, timeout=90, max_retries=2)
     return OpenAI(api_key=settings.OPENAI_API_KEY, timeout=90, max_retries=2)
 
 
 def model_chain(tier: str = "fast") -> list[str]:
-    configured_value = settings.OPENAI_MODEL_FAST if tier == "fast" else settings.OPENAI_MODEL
+    if provider() == "gemini":
+        configured_value = settings.GEMINI_MODEL_FAST if tier == "fast" else settings.GEMINI_MODEL
+        defaults = GEMINI_TIER_DEFAULTS[tier]
+    else:
+        configured_value = settings.OPENAI_MODEL_FAST if tier == "fast" else settings.OPENAI_MODEL
+        defaults = TIER_DEFAULTS[tier]
     configured = [m.strip() for m in configured_value.split(",") if m.strip()]
-    return configured + [m for m in TIER_DEFAULTS[tier] if m not in configured]
+    return configured + [m for m in defaults if m not in configured]
 
 
 def is_reasoning_model(model: str) -> bool:
@@ -86,11 +103,11 @@ def last_error() -> str | None:
 
 def ai_status() -> dict:
     if not ai_enabled():
-        return {"enabled": False, "model": None, "models": {}, "ready": False, "error": "no_api_key"}
+        return {"enabled": False, "provider": None, "model": None, "models": {}, "ready": False, "error": "no_api_key"}
     models = {tier: resolve_model(tier) for tier in TIER_DEFAULTS}
     # A key with no credits resolves models fine but every request is refused
     ready = any(models.values()) and _account["error"] not in ("insufficient_quota", "invalid_api_key")
-    return {"enabled": True, "model": models["smart"] or models["fast"], "models": models, "ready": ready, "error": _account["error"]}
+    return {"enabled": True, "provider": provider(), "model": models["smart"] or models["fast"], "models": models, "ready": ready, "error": _account["error"]}
 
 
 def complete(messages: list[dict], *, tier: str = "fast", effort: str = "low", max_output: int = 800, json_mode: bool = False, temperature: float = 0) -> str | None:
