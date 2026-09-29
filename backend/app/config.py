@@ -13,6 +13,10 @@ def _database_url() -> str:
     # SQLAlchemy 1.4+ rejects the legacy "postgres://" scheme that Heroku/Render/compose often emit
     if url.startswith("postgres://"):
         url = "postgresql://" + url[len("postgres://"):]
+    # Name the driver explicitly: SQLAlchemy 2.1 changed the default Postgres driver to psycopg 3,
+    # while this project ships psycopg2
+    if url.startswith("postgresql://"):
+        url = "postgresql+psycopg2://" + url[len("postgresql://"):]
     return url
 
 
