@@ -15,13 +15,12 @@ logger = logging.getLogger("financeai.ai")
 
 EMPTY_RECEIPT = {"amount": None, "date": None, "merchant": None, "category": None, "items": []}
 
-# Two tiers, cheapest model that does the job well first. Astra (the top, most expensive model)
-# is deliberately not used. Env overrides: OPENAI_MODEL_FAST / OPENAI_MODEL (comma-separated, best first).
+# Two tiers, GPT-4 family only (sufficient for these tasks and inexpensive). Env overrides: OPENAI_MODEL_FAST / OPENAI_MODEL (comma-separated, best first).
 #   fast  -> extraction: quick add, split fill, receipts (text + photos)
 #   smart -> the finance assistant chat, which reasons over the user's whole snapshot
 TIER_DEFAULTS = {
-    "fast": ["gpt-6-luna", "gpt-5-mini", "gpt-4o-mini"],
-    "smart": ["gpt-6.1-sol", "gpt-6-luna", "gpt-5", "gpt-4o-mini"],
+    "fast": ["gpt-4.1-mini", "gpt-4o-mini"],
+    "smart": ["gpt-4.1", "gpt-4o", "gpt-4.1-mini", "gpt-4o-mini"],
 }
 REASONING_PREFIXES = ("gpt-5", "gpt-6", "o1", "o3", "o4")
 # Only some models accept reasoning_effort "none"; others get their lowest supported level

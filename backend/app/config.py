@@ -33,9 +33,9 @@ class Settings:
 
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     # Model for the assistant chat (reasoning over the user's data); comma-separated, best first
-    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-6.1-sol")
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4.1")
     # Cheaper model for simple extraction: quick add, split fill, receipts
-    OPENAI_MODEL_FAST: str = os.getenv("OPENAI_MODEL_FAST", "gpt-6-luna")
+    OPENAI_MODEL_FAST: str = os.getenv("OPENAI_MODEL_FAST", "gpt-4.1-mini")
 
     TESSERACT_CMD: str = os.getenv("TESSERACT_CMD", "")
 

@@ -8,7 +8,7 @@ from openai import BadRequestError, NotFoundError, RateLimitError
 from app.services import ai_service
 from app.services import openai_service as svc
 
-EVERYTHING = {"gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna", "gpt-4o-mini"}
+EVERYTHING = {"gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna", "gpt-4.1", "gpt-4.1-mini", "gpt-4o-mini"}
 
 
 def _error(cls, message):
@@ -65,8 +65,8 @@ def fake(monkeypatch):
     def install(available, **options):
         client = FakeClient(available, **options)
         monkeypatch.setattr(svc.settings, "OPENAI_API_KEY", "sk-test")
-        monkeypatch.setattr(svc.settings, "OPENAI_MODEL", "gpt-6.1-sol")
-        monkeypatch.setattr(svc.settings, "OPENAI_MODEL_FAST", "gpt-6-luna")
+        monkeypatch.setattr(svc.settings, "OPENAI_MODEL", "gpt-4.1")
+        monkeypatch.setattr(svc.settings, "OPENAI_MODEL_FAST", "gpt-4.1-mini")
         monkeypatch.setattr(svc, "get_client", lambda: client)
         reset()
         return client
@@ -80,25 +80,32 @@ def fake(monkeypatch):
     reset()
 
 
-def test_simple_tasks_use_luna_and_chat_uses_sol_never_astra(fake):
+def test_uses_gpt4_family_only_never_gpt6(fake):
     fake(EVERYTHING)
-    assert svc.resolve_model("fast") == "gpt-6-luna"
-    assert svc.resolve_model("smart") == "gpt-6.1-sol"
+    assert svc.resolve_model("fast") == "gpt-4.1-mini"
+    assert svc.resolve_model("smart") == "gpt-4.1"
 
 
-def test_smart_tier_falls_back_to_lighter_model_not_astra(fake):
-    fake({"gpt-6-astra", "gpt-6-luna"})
-    assert svc.resolve_model("smart") == "gpt-6-luna"
+def test_smart_tier_falls_back_within_gpt4_family(fake):
+    fake({"gpt-6-astra", "gpt-6.1-sol", "gpt-4o-mini"})
+    assert svc.resolve_model("smart") == "gpt-4o-mini"
 
 
 def test_extraction_request_shape(fake):
     client = fake(EVERYTHING)
     assert svc.chat_json([{"role": "user", "content": "hi"}], max_tokens=400) == {"ok": True}
     call = client.calls[-1]
-    assert call["model"] == "gpt-6-luna" and call["reasoning_effort"] == "none"
-    assert call["max_completion_tokens"] > 400
-    assert "temperature" not in call and "max_tokens" not in call
+    assert call["model"] == "gpt-4.1-mini" and call["max_tokens"] == 400 and call["temperature"] == 0
+    assert "reasoning_effort" not in call
     assert call["response_format"] == {"type": "json_object"}
+
+
+def test_reasoning_model_shape_if_configured(fake, monkeypatch):
+    client = fake(EVERYTHING)
+    monkeypatch.setattr(svc.settings, "OPENAI_MODEL_FAST", "gpt-6-luna")
+    svc.chat_json([{"role": "user", "content": "hi"}], max_tokens=400)
+    call = client.calls[-1]
+    assert call["reasoning_effort"] == "none" and call["max_completion_tokens"] > 400 and "temperature" not in call
 
 
 def test_none_effort_becomes_low_on_models_without_it(fake, monkeypatch):
@@ -122,8 +129,9 @@ def test_adapts_to_unsupported_parameters(fake):
     assert "reasoning_effort" not in client.calls[-1] and "response_format" not in client.calls[-1]
 
 
-def test_retries_when_reasoning_exhausts_the_budget(fake):
+def test_retries_when_reasoning_exhausts_the_budget(fake, monkeypatch):
     client = fake(EVERYTHING, empty_first=True)
+    monkeypatch.setattr(svc.settings, "OPENAI_MODEL_FAST", "gpt-6-luna")
     assert svc.chat_json([{"role": "user", "content": "hi"}]) == {"ok": True}
     assert client.calls[1]["max_completion_tokens"] == client.calls[0]["max_completion_tokens"] * 2
 
@@ -131,7 +139,7 @@ def test_retries_when_reasoning_exhausts_the_budget(fake):
 def test_status_reports_both_models(fake):
     fake(EVERYTHING)
     status = svc.ai_status()
-    assert status["ready"] and status["models"] == {"fast": "gpt-6-luna", "smart": "gpt-6.1-sol"}
+    assert status["ready"] and status["models"] == {"fast": "gpt-4.1-mini", "smart": "gpt-4.1"}
 
 
 def test_no_credits_marks_ai_not_ready_until_a_request_succeeds(fake):
@@ -147,7 +155,7 @@ def test_chat_uses_openai_when_available_and_explains_fallback_otherwise(fake):
     client = fake(EVERYTHING)
     ctx = ai_service.build_context([], [], "INR", date(2026, 9, 30))
     reply = ai_service.chat("hello", [], ctx)
-    assert reply["source"] == "ai" and client.calls[-1]["model"] == "gpt-6.1-sol"
+    assert reply["source"] == "ai" and client.calls[-1]["model"] == "gpt-4.1"
 
     client.no_credits = True
     reply = ai_service.chat("hello", [], ctx)
@@ -159,7 +167,7 @@ def test_chat_falls_back_to_lighter_openai_model_before_rules(fake):
     original = client.chat.completions.create
 
     def refuse_sol(**kwargs):
-        if kwargs["model"] == "gpt-6.1-sol":
+        if kwargs["model"] == "gpt-4.1":
             client.calls.append(dict(kwargs))
             raise _error(RateLimitError, "You have no credits remaining. insufficient_quota")
         return original(**kwargs)
@@ -167,4 +175,4 @@ def test_chat_falls_back_to_lighter_openai_model_before_rules(fake):
     client.chat.completions.create = refuse_sol
     ctx = ai_service.build_context([], [], "INR", date(2026, 9, 30))
     reply = ai_service.chat("hello", [], ctx)
-    assert reply["source"] == "ai" and client.calls[-1]["model"] == "gpt-6-luna"
+    assert reply["source"] == "ai" and client.calls[-1]["model"] == "gpt-4.1-mini"
