@@ -14,6 +14,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { motion } from "motion/react";
+import { useLocation } from "react-router";
 import {
   Area,
   CartesianGrid,
@@ -63,6 +64,19 @@ export function AIInsights() {
   const [inputMessage, setInputMessage] = useState("");
   const [thinking, setThinking] = useState(false);
   const chatBoxRef = useRef<HTMLDivElement | null>(null);
+  const chatSectionRef = useRef<HTMLDivElement | null>(null);
+  const chatInputRef = useRef<HTMLInputElement | null>(null);
+  const location = useLocation();
+
+  // "Ask the AI" links here with #chat: jump straight to the assistant and put the cursor in the box
+  useEffect(() => {
+    if (location.hash !== "#chat") return;
+    const timer = window.setTimeout(() => {
+      chatSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      chatInputRef.current?.focus({ preventScroll: true });
+    }, 350); // let the page's entrance animation and charts settle first
+    return () => window.clearTimeout(timer);
+  }, [location.key, location.hash]);
 
   // Keep the newest message in view by scrolling only the chat box, never the page, and not on first load
   useEffect(() => {
@@ -406,7 +420,7 @@ export function AIInsights() {
         </motion.div>
       </div>
 
-      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="rounded-3xl border border-border bg-card p-6">
+      <motion.div id="chat" ref={chatSectionRef} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="scroll-mt-4 rounded-3xl border border-border bg-card p-6">
         <div className="mb-6 flex items-center gap-2">
           <MessageSquare className="h-5 w-5 text-primary" />
           <h2 className="text-xl font-semibold">Ask the assistant</h2>
@@ -464,6 +478,7 @@ export function AIInsights() {
             placeholder="Ask about budgets, savings, subscriptions, or whether you can afford something..."
             className="flex-1 rounded-2xl border border-border bg-input-background px-4 py-3 outline-none transition-colors focus:border-primary"
             aria-label="Message the assistant"
+            ref={chatInputRef}
           />
           <button type="submit" disabled={!inputMessage.trim() || thinking} className="rounded-2xl bg-primary px-5 py-3 text-primary-foreground transition-colors hover:bg-primary-glow disabled:opacity-50" aria-label="Send">
             <Send className="h-5 w-5" />

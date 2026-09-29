@@ -181,7 +181,7 @@ export function Dashboard() {
         {[
           { to: "/scan", icon: ScanLine, title: "Scan a receipt", text: "Snap a bill and AI fills in the expense.", tone: "text-primary bg-primary/10" },
           { to: "/split", icon: Users, title: "Split expenses", text: "Track shared bills and who owes whom.", tone: "text-income bg-income/10" },
-          { to: "/insights", icon: Sparkles, title: "Ask the AI", text: "Forecasts, subscriptions, and what-if savings.", tone: "text-secondary-bright bg-secondary-bright/10" },
+          { to: "/insights#chat", icon: Sparkles, title: "Ask the AI", text: "Forecasts, subscriptions, and what-if savings.", tone: "text-secondary-bright bg-secondary-bright/10" },
         ].map((item) => (
           <Link key={item.to} to={item.to} className="flex items-center gap-4 rounded-2xl border border-border bg-card p-4 transition-all hover:border-primary hover:shadow-lg hover:shadow-primary/10">
             <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${item.tone}`}>
