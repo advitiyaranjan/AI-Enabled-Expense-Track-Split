@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, text
 from .database import engine, Base
 from . import models
-from .routes import auth as auth_routes, transactions as tx_routes, receipts as receipts_routes, groups as groups_routes, insights as insights_routes, ai as ai_routes
+from .routes import auth as auth_routes, transactions as tx_routes, receipts as receipts_routes, groups as groups_routes, insights as insights_routes, ai as ai_routes, splits as splits_routes, users as users_routes
 from .middleware import SimpleRateLimiterMiddleware
 
 app = FastAPI(title="AI Finance Tracker Backend")
@@ -23,11 +23,28 @@ def ensure_runtime_columns():
     if "country" not in columns:
         statements.append("ALTER TABLE users ADD COLUMN country VARCHAR DEFAULT 'United States' NOT NULL")
     if "currency" not in columns:
-        statements.append("ALTER TABLE users ADD COLUMN currency VARCHAR DEFAULT 'USD' NOT NULL")
-    if statements:
-        with engine.begin() as connection:
-            for statement in statements:
+        statements.append("ALTER TABLE users ADD COLUMN currency VARCHAR DEFAULT 'INR' NOT NULL")
+    if "public_id" not in columns:
+        statements.append("ALTER TABLE users ADD COLUMN public_id INTEGER")
+        statements.append("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_public_id ON users (public_id)")
+    if "upi_id" not in columns:
+        statements.append("ALTER TABLE users ADD COLUMN upi_id VARCHAR")
+    for statement in statements:
+        # One transaction per change: if another cold-starting instance already applied it, skip it
+        try:
+            with engine.begin() as connection:
                 connection.execute(text(statement))
+        except Exception as exc:  # noqa: BLE001
+            if "exist" not in str(exc).lower() and "duplicate" not in str(exc).lower():
+                raise
+    # Give every existing account a FinanceAI ID
+    from .database import SessionLocal
+    from .services.user_ids import backfill_public_ids
+    db = SessionLocal()
+    try:
+        backfill_public_ids(db)
+    finally:
+        db.close()
 
 
 ensure_runtime_columns()
@@ -47,6 +64,8 @@ app.include_router(receipts_routes.router)
 app.include_router(groups_routes.router)
 app.include_router(insights_routes.router)
 app.include_router(ai_routes.router)
+app.include_router(splits_routes.router)
+app.include_router(users_routes.router)
 
 
 @app.get("/health")

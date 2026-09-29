@@ -70,14 +70,19 @@ class ResendOtpRequest(BaseModel):
     challenge_id: str = Field(..., min_length=10, max_length=64)
 
 
+UPI_PATTERN = re.compile(r"^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z][a-zA-Z0-9]{1,63}$")
+
+
 class UserOut(BaseModel):
     id: int
+    public_id: Optional[int] = None
     name: str
     email: str
     phone: Optional[str] = None
     location: Optional[str] = None
     country: str
     currency: str
+    upi_id: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -93,6 +98,17 @@ class UserUpdate(BaseModel):
     location: Optional[str] = None
     country: Optional[str] = None
     currency: Optional[str] = None
+    upi_id: Optional[str] = None  # "" clears it
+
+    @field_validator("upi_id")
+    @classmethod
+    def validate_upi(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        value = value.strip()
+        if value and not UPI_PATTERN.fullmatch(value):
+            raise ValueError("Enter a valid UPI ID, like name@okaxis")
+        return value.lower()
 
     @field_validator("email")
     @classmethod
@@ -215,3 +231,26 @@ class ChatRequest(BaseModel):
 class ParseTransactionRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=500)
     today: Optional[date] = None
+
+
+class SplitParticipantIn(BaseModel):
+    key: str = Field(..., min_length=1, max_length=64)
+    name: str = Field(..., min_length=1, max_length=80)
+    amount: float = Field(..., ge=0)
+    settled: bool = False
+
+
+class SplitShareRequest(BaseModel):
+    client_id: str = Field(..., min_length=1, max_length=64)
+    title: str = Field(..., min_length=1, max_length=120)
+    total: float = Field(..., gt=0)
+    participants: List[SplitParticipantIn] = Field(..., min_length=1, max_length=30)
+
+
+class SplitClaimRequest(BaseModel):
+    key: str = Field(..., min_length=1, max_length=64)
+
+
+class ParseSplitRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=600)
+    friends: List[str] = Field(default_factory=list, max_length=200)

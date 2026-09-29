@@ -8,11 +8,17 @@ import { AIInsights } from "./pages/AIInsights";
 import { Budget } from "./pages/Budget";
 import { Profile } from "./pages/Profile";
 import { AuthPage } from "./pages/AuthPage";
+import { PaySplit } from "./pages/PaySplit";
 
 export const router = createBrowserRouter([
   {
     path: "/auth",
     Component: AuthPage,
+  },
+  {
+    // Public: friends open this from a shared link without an account
+    path: "/pay/:token",
+    Component: PaySplit,
   },
   {
     path: "/",

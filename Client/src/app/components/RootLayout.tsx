@@ -9,7 +9,6 @@ import {
   Wallet,
   User,
   TrendingUp,
-  Wifi,
   WifiOff,
   LoaderCircle,
   LogOut,
@@ -39,12 +38,7 @@ function BackendIndicator() {
   }
 
   if (backendStatus === "connected") {
-    return (
-      <div className="inline-flex items-center gap-2 rounded-full border border-income/20 bg-income/10 px-3 py-1.5 text-xs text-income">
-        <Wifi className="h-3.5 w-3.5" />
-        Backend connected
-      </div>
-    );
+    return null;
   }
 
   return (
@@ -56,6 +50,21 @@ function BackendIndicator() {
       <WifiOff className="h-3.5 w-3.5" />
       Offline · retry
     </button>
+  );
+}
+
+/** Only surfaces connection state when something is wrong; no permanent header. */
+function OfflineBanner() {
+  const { backendStatus, reconnect } = useFinance();
+  if (backendStatus !== "offline") return null;
+  return (
+    <div className="sticky top-0 z-40 flex items-center justify-center gap-2 bg-expense px-4 py-1.5 text-xs font-medium text-white">
+      <WifiOff className="h-3.5 w-3.5" />
+      You're offline. Changes are saved on this device.
+      <button onClick={() => void reconnect()} className="underline underline-offset-2">
+        Retry
+      </button>
+    </div>
   );
 }
 
@@ -124,22 +133,7 @@ export function RootLayout() {
       </aside>
 
       <div className="flex min-h-screen min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur">
-          <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 lg:px-8 lg:py-4">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-secondary-bright lg:hidden">
-                <TrendingUp className="h-5 w-5 text-white" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs text-muted-foreground lg:text-sm">Welcome back</p>
-                <h2 className="truncate text-lg font-semibold lg:text-xl">{profile.displayName}</h2>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <BackendIndicator />
-            </div>
-          </div>
-        </header>
+        <OfflineBanner />
 
         <main className="flex-1 pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-0">
           <Outlet />

@@ -1,20 +1,33 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Link } from "react-router";
 import {
   ArrowRight,
   Check,
+  Copy,
   DollarSign,
+  Hash,
+  Link2,
+  LoaderCircle,
+  MessageCircle,
   Percent,
   Plus,
+  Share2,
+  Sparkles,
   Trash2,
   UserPlus,
   Users,
+  Wand2,
   X,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { getNetBalances, getSplitSummary, SELF_ID, useFinance, type Friend, type SplitMode } from "../lib/finance";
+import { getNetBalances, getSplitSummary, SELF_ID, useFinance, type ExpenseGroup, type Friend, type ParsedSplit, type SplitMode } from "../lib/finance";
+
+function whatsappUrl(text: string) {
+  return `https://wa.me/?text=${encodeURIComponent(text)}`;
+}
 
 export function SplitExpenses() {
-  const { groups, friends, profile, createGroup, deleteGroup, toggleSettlement, addFriend, formatMoney } = useFinance();
+  const { groups, friends, profile, createGroup, deleteGroup, toggleSettlement, addFriend, formatMoney, parseSplit, lookupUser, shareGroup, refreshSharedSplits, backendStatus } = useFinance();
   const [showModal, setShowModal] = useState(false);
   const [groupName, setGroupName] = useState("");
   const [totalAmount, setTotalAmount] = useState("");
@@ -24,6 +37,21 @@ export function SplitExpenses() {
   const [customValues, setCustomValues] = useState<Record<string, string>>({});
   const [newFriend, setNewFriend] = useState("");
   const [error, setError] = useState("");
+  const [aiText, setAiText] = useState("");
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiNote, setAiNote] = useState("");
+  const [idInput, setIdInput] = useState("");
+  const [idBusy, setIdBusy] = useState(false);
+  const [share, setShare] = useState<Record<string, { busy?: boolean; error?: string; copied?: string }>>({});
+
+  // Pick up "I've paid" taps from shared links now and whenever the user comes back to the tab
+  useEffect(() => {
+    void refreshSharedSplits();
+    const onFocus = () => void refreshSharedSplits();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+    // Re-register once the connection is up: refreshSharedSplits is a no-op while still connecting
+  }, [backendStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const summary = getSplitSummary(groups);
   const netBalances = getNetBalances(groups);
@@ -58,7 +86,101 @@ export function SplitExpenses() {
     setCustomValues(Object.fromEntries(participants.map((participant) => [participant.id, share.toFixed(2)])));
   }
 
+  async function handleAiFill() {
+    if (!aiText.trim() || aiBusy) return;
+    setAiBusy(true);
+    setError("");
+    setAiNote("");
+    const result = await parseSplit(aiText.trim());
+    setAiBusy(false);
+    if (!result.ok || !result.data) {
+      setError(result.error ?? "Couldn't understand that. Try naming the amount and the people.");
+      return;
+    }
+    applyParsed(result.data);
+  }
+
+  function applyParsed(parsed: ParsedSplit) {
+    const people: Friend[] = [];
+    for (const entry of parsed.participants) {
+      const friend = friends.find((candidate) => candidate.name.toLowerCase() === entry.name.toLowerCase()) ?? addFriend(entry.name);
+      if (friend && !people.some((person) => person.id === friend.id)) people.push(friend);
+    }
+    setSelectedFriends(people);
+    if (parsed.title) setGroupName(parsed.title);
+    if (parsed.total) setTotalAmount(String(parsed.total));
+    setSplitMode(parsed.mode);
+    const payer = parsed.payer.toLowerCase() === "you" ? null : people.find((person) => person.name.toLowerCase() === parsed.payer.toLowerCase());
+    setPaidById(payer?.id ?? SELF_ID);
+
+    const values: Record<string, string> = {};
+    if (parsed.mode !== "equal") {
+      const pick = (entry: { amount: number | null; percentage: number | null }) => (parsed.mode === "custom" ? entry.amount : entry.percentage);
+      const mine = parsed.mode === "custom" ? parsed.your_amount : parsed.your_percentage;
+      if (mine !== null && mine !== undefined) values[SELF_ID] = String(mine);
+      parsed.participants.forEach((entry, index) => {
+        const value = pick(entry);
+        if (people[index] && value !== null && value !== undefined) values[people[index].id] = String(value);
+      });
+    }
+    setCustomValues(values);
+    const missing = !parsed.total ? " Add the total amount." : people.length === 0 ? " Pick who to split with." : "";
+    setAiNote(`Filled by ${parsed.source === "ai" ? "AI" : "smart rules"}. Check the details below.${missing}`);
+  }
+
+  async function handleAddById() {
+    if (!idInput.trim() || idBusy) return;
+    setIdBusy(true);
+    setError("");
+    const result = await lookupUser(idInput);
+    setIdBusy(false);
+    if (result.ok && result.data) {
+      const friend = result.data;
+      setSelectedFriends((current) => (current.some((entry) => entry.id === friend.id) ? current : [...current, friend]));
+      setIdInput("");
+    } else {
+      setError(result.error ?? "Couldn't find that ID");
+    }
+  }
+
+  async function handleShare(group: ExpenseGroup) {
+    setShare((current) => ({ ...current, [group.id]: { busy: true } }));
+    const result = await shareGroup(group.id);
+    setShare((current) => ({ ...current, [group.id]: result.ok ? {} : { error: result.error } }));
+  }
+
+  function payUrl(group: ExpenseGroup, participantId?: string) {
+    const base = `${window.location.origin}/pay/${group.shareToken}`;
+    return participantId ? `${base}?p=${encodeURIComponent(participantId)}` : base;
+  }
+
+  function shareMessage(group: ExpenseGroup) {
+    return `${group.name}: ${formatMoney(group.totalAmount)}. I paid, so tap to pay your share by UPI: ${payUrl(group)}`;
+  }
+
+  async function nativeShare(group: ExpenseGroup) {
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: group.name, text: shareMessage(group), url: payUrl(group) });
+        return;
+      } catch {
+        return; // user cancelled the share sheet
+      }
+    }
+    copyLink(group);
+  }
+
+  function copyLink(group: ExpenseGroup, participantId?: string) {
+    void navigator.clipboard?.writeText(payUrl(group, participantId)).then(() => {
+      setShare((current) => ({ ...current, [group.id]: { ...current[group.id], copied: participantId ?? "all" } }));
+      window.setTimeout(() => setShare((current) => ({ ...current, [group.id]: { ...current[group.id], copied: undefined } })), 1500);
+    });
+  }
+
   function resetModal() {
+    setAiText("");
+    setAiNote("");
+    setIdInput("");
     setShowModal(false);
     setGroupName("");
     setTotalAmount("");
@@ -184,6 +306,45 @@ export function SplitExpenses() {
                   </div>
                 </div>
 
+                {group.paidById === SELF_ID && owedTotal > settledAmount ? (
+                  <div className="mb-5 rounded-2xl border border-primary/20 bg-primary/5 p-4">
+                    {group.shareToken ? (
+                      <>
+                        <p className="mb-3 flex items-center gap-2 text-sm font-medium">
+                          <Link2 className="h-4 w-4 text-primary" /> Payment link: friends tap it to pay you by UPI
+                        </p>
+                        <div className="grid grid-cols-3 gap-2">
+                          <button onClick={() => void nativeShare(group)} className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary-glow">
+                            <Share2 className="h-4 w-4" /> Share
+                          </button>
+                          <a href={whatsappUrl(shareMessage(group))} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-border px-3 py-2 text-sm font-medium hover:border-primary">
+                            <MessageCircle className="h-4 w-4" /> WhatsApp
+                          </a>
+                          <button onClick={() => copyLink(group)} className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-border px-3 py-2 text-sm font-medium hover:border-primary">
+                            {share[group.id]?.copied === "all" ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                            {share[group.id]?.copied === "all" ? "Copied" : "Copy"}
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => void handleShare(group)}
+                        disabled={share[group.id]?.busy}
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary-glow disabled:opacity-60"
+                      >
+                        {share[group.id]?.busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
+                        Create UPI payment link
+                      </button>
+                    )}
+                    {share[group.id]?.error ? (
+                      <p className="mt-2 text-sm text-expense">
+                        {share[group.id]?.error}{" "}
+                        {share[group.id]?.error?.includes("UPI") ? <Link to="/profile" className="font-semibold underline">Add UPI ID</Link> : null}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 <div className="mb-5">
                   <div className="mb-2 flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">Settled {formatMoney(settledAmount)} of {formatMoney(owedTotal)}</span>
@@ -208,16 +369,27 @@ export function SplitExpenses() {
                       <div className="flex items-center gap-3">
                         <div className="text-right">
                           <p className="font-semibold">{formatMoney(participant.amount)}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {participant.id === group.paidById ? "Paid the bill" : participant.settled ? "Settled" : "Pending"}
+                          <p className={`text-xs ${participant.claimed && !participant.settled ? "font-medium text-secondary-bright" : "text-muted-foreground"}`}>
+                            {participant.id === group.paidById ? "Paid the bill" : participant.settled ? "Settled" : participant.claimed ? "Says they paid" : "Pending"}
                           </p>
                         </div>
+                        {participant.id !== group.paidById && !participant.isYou && !participant.settled && group.shareToken && group.paidById === SELF_ID ? (
+                          <a
+                            href={whatsappUrl(`Hi ${participant.name.split(" ")[0]}, your share for ${group.name} is ${formatMoney(participant.amount)}. Pay here: ${payUrl(group, participant.id)}`)}
+                            target="_blank"
+                            rel="noreferrer"
+                            aria-label={`Remind ${participant.name} on WhatsApp`}
+                            className="rounded-2xl p-2 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+                          >
+                            <MessageCircle className="h-4 w-4" />
+                          </a>
+                        ) : null}
                         {participant.id !== group.paidById ? (
                           <button
                             onClick={() => toggleSettlement(group.id, participant.id)}
                             className={`rounded-2xl px-4 py-2 text-sm font-medium transition-colors ${participant.settled ? "bg-income/15 text-income hover:bg-income/20" : "bg-primary/10 text-primary hover:bg-primary/20"}`}
                           >
-                            {participant.settled ? "Mark pending" : "Mark settled"}
+                            {participant.settled ? "Mark pending" : participant.claimed ? "Confirm paid" : "Mark settled"}
                           </button>
                         ) : (
                           <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-income text-white">
@@ -254,6 +426,37 @@ export function SplitExpenses() {
               </div>
 
               <div className="grid gap-6">
+                <div className="rounded-2xl border border-primary/25 bg-gradient-to-br from-primary/10 to-transparent p-4">
+                  <p className="mb-2 flex items-center gap-2 text-sm font-semibold">
+                    <Wand2 className="h-4 w-4 text-primary" /> Describe it and AI fills the form
+                  </p>
+                  <textarea
+                    value={aiText}
+                    onChange={(event) => setAiText(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        void handleAiFill();
+                      }
+                    }}
+                    rows={2}
+                    placeholder='e.g. "Dinner 2400 with Sarah and Mike, I paid" or "Groceries 1200: Sarah 500, Mike 300, me 400"'
+                    className="w-full resize-none rounded-xl border border-border bg-input-background px-3 py-2 text-sm outline-none focus:border-primary"
+                  />
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    <p className="text-xs text-muted-foreground">{aiNote || "Mention the amount, who's in, who paid, and any custom shares or %."}</p>
+                    <button
+                      type="button"
+                      onClick={() => void handleAiFill()}
+                      disabled={!aiText.trim() || aiBusy}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary-glow disabled:opacity-50"
+                    >
+                      {aiBusy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                      Fill
+                    </button>
+                  </div>
+                </div>
+
                 <label className="grid gap-2">
                   <span className="text-sm text-muted-foreground">What was it for?</span>
                   <input
@@ -290,7 +493,7 @@ export function SplitExpenses() {
 
                 <div>
                   <span className="mb-2 block text-sm text-muted-foreground">Split mode</span>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  <div className="grid grid-cols-3 gap-2">
                     {([
                       { value: "equal", label: "Equal", icon: Users },
                       { value: "custom", label: "Exact amounts", icon: DollarSign },
@@ -344,6 +547,28 @@ export function SplitExpenses() {
                     />
                     <button type="submit" disabled={!newFriend.trim()} className="inline-flex items-center gap-2 rounded-2xl border border-border px-4 py-2 text-sm hover:border-primary disabled:opacity-50">
                       <UserPlus className="h-4 w-4" /> Add
+                    </button>
+                  </form>
+                  <form
+                    className="mt-2 flex gap-2"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void handleAddById();
+                    }}
+                  >
+                    <div className="flex flex-1 items-center gap-2 rounded-2xl border border-border bg-input-background px-4 focus-within:border-primary">
+                      <Hash className="h-4 w-4 text-muted-foreground" />
+                      <input
+                        value={idInput}
+                        onChange={(event) => setIdInput(event.target.value.replace(/\D/g, "").slice(0, 8))}
+                        inputMode="numeric"
+                        placeholder="Add by FinanceAI ID (8 digits)"
+                        className="min-w-0 flex-1 bg-transparent py-2 outline-none"
+                        aria-label="FinanceAI ID"
+                      />
+                    </div>
+                    <button type="submit" disabled={idInput.length !== 8 || idBusy} className="inline-flex items-center gap-2 rounded-2xl border border-border px-4 py-2 text-sm hover:border-primary disabled:opacity-50">
+                      {idBusy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />} Add
                     </button>
                   </form>
                 </div>

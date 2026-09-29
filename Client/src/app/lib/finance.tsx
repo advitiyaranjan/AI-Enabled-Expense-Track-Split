@@ -46,6 +46,8 @@ export interface Friend {
   id: string;
   name: string;
   avatar: string;
+  publicId?: number;
+  upiId?: string | null;
 }
 
 export interface SplitParticipant extends Friend {
@@ -53,6 +55,8 @@ export interface SplitParticipant extends Friend {
   percentage: number;
   settled: boolean;
   isYou: boolean;
+  /** They tapped "I've paid" on the shared payment link; the payer still confirms */
+  claimed?: boolean;
 }
 
 export interface ExpenseGroup {
@@ -63,6 +67,19 @@ export interface ExpenseGroup {
   mode: SplitMode;
   paidById: string;
   participants: SplitParticipant[];
+  /** Set once the bill has a public payment link */
+  shareToken?: string;
+}
+
+export interface ParsedSplit {
+  title: string;
+  total: number | null;
+  payer: string; // "you" or a person's name
+  mode: SplitMode;
+  participants: Array<{ name: string; amount: number | null; percentage: number | null }>;
+  your_amount: number | null;
+  your_percentage: number | null;
+  source: "ai" | "rules";
 }
 
 export interface ReceiptItem {
@@ -98,6 +115,8 @@ export interface ProfileData {
   locale: string;
   darkMode: boolean;
   notifications: NotificationSettings;
+  publicId: number | null;
+  upiId: string;
 }
 
 export interface CategoryTrend {
@@ -203,8 +222,12 @@ interface FinanceContextValue {
     customValues?: Record<string, number>;
   }) => void;
   deleteGroup: (groupId: string) => void;
+  shareGroup: (groupId: string) => Promise<Result<{ token: string; url: string }>>;
+  refreshSharedSplits: () => Promise<void>;
+  parseSplit: (text: string) => Promise<Result<ParsedSplit>>;
+  lookupUser: (publicId: string) => Promise<Result<Friend>>;
   toggleSettlement: (groupId: string, participantId: string) => void;
-  addFriend: (name: string) => Friend | null;
+  addFriend: (name: string, extra?: Pick<Friend, "publicId" | "upiId">) => Friend | null;
   updateProfile: (updates: Partial<ProfileData>) => Promise<Result>;
   askAssistant: (message: string, history: ChatTurn[]) => Promise<{ reply: string; source: "ai" | "rules" | "local" }>;
   parseQuickAdd: (text: string) => Promise<Result<QuickAddDraft>>;
@@ -220,7 +243,7 @@ interface FinanceContextValue {
   formatMoney: (amount: number) => string;
 }
 
-const API_BASE_URL = (import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
+export const API_BASE_URL = (import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
 const STORAGE_PREFIX = "financeai";
 export const SELF_ID = "self";
 
@@ -320,6 +343,8 @@ function normalizeProfile(input?: Partial<ProfileData> & { country?: string; cur
       ...defaultNotifications,
       ...(input?.notifications ?? {}),
     },
+    publicId: input?.publicId ?? null,
+    upiId: input?.upiId ?? "",
   } satisfies ProfileData;
 }
 
@@ -443,6 +468,8 @@ type RemoteUser = {
   location?: string | null;
   country?: string | null;
   currency?: string | null;
+  public_id?: number | null;
+  upi_id?: string | null;
 };
 
 function normalizeRemoteProfile(user: RemoteUser) {
@@ -453,6 +480,8 @@ function normalizeRemoteProfile(user: RemoteUser) {
     location: user.location ?? "",
     country: user.country ?? inferCountryFromBrowser(),
     currency: user.currency ?? undefined,
+    publicId: user.public_id ?? null,
+    upiId: user.upi_id ?? "",
     darkMode: readStorage("profile_darkMode", true),
     notifications: readStorage("profile_notifications", defaultNotifications),
   });
@@ -1093,30 +1122,117 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   }
 
   function deleteGroup(groupId: string) {
-    setGroups((current) => current.filter((group) => group.id !== groupId));
+    const group = groups.find((entry) => entry.id === groupId);
+    setGroups((current) => current.filter((entry) => entry.id !== groupId));
+    if (group?.shareToken && connected) {
+      void fetchJson(`/splits/${group.shareToken}`, { method: "DELETE" }, token).catch(() => undefined);
+    }
+  }
+
+  function sharePayload(group: ExpenseGroup) {
+    return {
+      client_id: group.id,
+      title: group.name,
+      total: group.totalAmount,
+      participants: group.participants
+        .filter((participant) => participant.id !== group.paidById)
+        .map((participant) => ({ key: participant.id, name: participant.name, amount: participant.amount, settled: participant.settled })),
+    };
   }
 
   function toggleSettlement(groupId: string, participantId: string) {
-    setGroups((current) =>
-      current.map((group) =>
-        group.id !== groupId
-          ? group
-          : {
-              ...group,
-              participants: group.participants.map((participant) =>
-                participant.id === participantId ? { ...participant, settled: !participant.settled } : participant,
-              ),
-            },
+    const group = groups.find((entry) => entry.id === groupId);
+    if (!group) return;
+    const next: ExpenseGroup = {
+      ...group,
+      participants: group.participants.map((participant) =>
+        participant.id === participantId ? { ...participant, settled: !participant.settled, claimed: false } : participant,
       ),
-    );
+    };
+    setGroups((current) => current.map((entry) => (entry.id === groupId ? next : entry)));
+    // Keep the public payment link in sync so a settled person no longer sees an amount due
+    if (next.shareToken && connected) {
+      void fetchJson("/splits/share", { method: "POST", body: JSON.stringify(sharePayload(next)) }, token).catch(() => undefined);
+    }
   }
 
-  function addFriend(name: string) {
+  async function shareGroup(groupId: string): Promise<Result<{ token: string; url: string }>> {
+    const group = groups.find((entry) => entry.id === groupId);
+    if (!group) return { ok: false, error: "Bill not found" };
+    if (group.paidById !== SELF_ID) return { ok: false, error: "Payment links are for bills you paid, so friends can pay you back." };
+    if (!connected) return { ok: false, error: "Sharing needs a connection to the server." };
+    try {
+      const response = await fetchJson<{ token: string }>("/splits/share", { method: "POST", body: JSON.stringify(sharePayload(group)) }, token);
+      setGroups((current) => current.map((entry) => (entry.id === groupId ? { ...entry, shareToken: response.token } : entry)));
+      return { ok: true, data: { token: response.token, url: `${window.location.origin}/pay/${response.token}` } };
+    } catch (error) {
+      if (handleAuthError(error)) return { ok: false, error: "Your session expired. Please sign in again." };
+      return { ok: false, error: errorMessage(error, "Unable to create the payment link") };
+    }
+  }
+
+  /** Pull "I've paid" taps from shared links into the local bills. */
+  async function refreshSharedSplits() {
+    if (!connected) return;
+    try {
+      const remote = await fetchJson<Array<{ client_id: string; token: string; participants: Array<{ key: string; claimed: boolean }> }>>("/splits/mine", undefined, token);
+      const byClient = new Map(remote.map((entry) => [entry.client_id, entry]));
+      setGroups((current) =>
+        current.map((group) => {
+          const match = byClient.get(group.id);
+          if (!match) return group;
+          const claims = new Map(match.participants.map((participant) => [participant.key, participant.claimed]));
+          return {
+            ...group,
+            shareToken: match.token,
+            participants: group.participants.map((participant) => ({ ...participant, claimed: !participant.settled && Boolean(claims.get(participant.id)) })),
+          };
+        }),
+      );
+    } catch (error) {
+      handleAuthError(error);
+    }
+  }
+
+  async function parseSplit(text: string): Promise<Result<ParsedSplit>> {
+    if (!connected) return { ok: false, error: "AI fill needs a connection to the server." };
+    try {
+      const data = await fetchJson<ParsedSplit>("/ai/parse-split", { method: "POST", body: JSON.stringify({ text, friends: friends.map((friend) => friend.name) }) }, token);
+      return { ok: true, data };
+    } catch (error) {
+      handleAuthError(error);
+      return { ok: false, error: errorMessage(error, "Couldn't understand that") };
+    }
+  }
+
+  async function lookupUser(publicId: string): Promise<Result<Friend>> {
+    const id = publicId.replace(/\D/g, "");
+    if (id.length !== 8) return { ok: false, error: "FinanceAI IDs are 8 digits." };
+    if (!connected) return { ok: false, error: "Looking up users needs a connection to the server." };
+    try {
+      const user = await fetchJson<{ public_id: number; name: string; upi_id: string | null; is_you: boolean }>(`/users/lookup/${id}`, undefined, token);
+      if (user.is_you) return { ok: false, error: "That's your own ID. You're always included in the split." };
+      const friend = addFriend(user.name, { publicId: user.public_id, upiId: user.upi_id });
+      return friend ? { ok: true, data: friend } : { ok: false, error: "Unable to add that user" };
+    } catch (error) {
+      handleAuthError(error);
+      return { ok: false, error: errorMessage(error, "Unable to find that user") };
+    }
+  }
+
+  function addFriend(name: string, extra?: Pick<Friend, "publicId" | "upiId">) {
     const trimmed = name.trim();
     if (!trimmed) return null;
-    const existing = friends.find((friend) => friend.name.toLowerCase() === trimmed.toLowerCase());
+    const existing = friends.find((friend) =>
+      extra?.publicId ? friend.publicId === extra.publicId : !friend.publicId && friend.name.toLowerCase() === trimmed.toLowerCase(),
+    );
     if (existing) return existing;
-    const friend: Friend = { id: `friend-${makeId()}`, name: trimmed, avatar: trimmed[0].toUpperCase() };
+    const friend: Friend = {
+      id: extra?.publicId ? `user-${extra.publicId}` : `friend-${makeId()}`,
+      name: trimmed,
+      avatar: trimmed[0].toUpperCase(),
+      ...extra,
+    };
     setCustomFriends((current) => [...current, friend]);
     return friend;
   }
@@ -1139,7 +1255,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     setProfile(nextProfile);
 
     // Theme and notification toggles are device preferences; only account fields go to the server
-    const accountFields = ["displayName", "email", "phone", "location", "country", "currency"] as const;
+    const accountFields = ["displayName", "email", "phone", "location", "country", "currency", "upiId"] as const;
     const accountChanged = accountFields.some((field) => field in updates && nextProfile[field] !== profile[field]);
     if (connected && accountChanged) {
       try {
@@ -1152,6 +1268,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
             location: nextProfile.location,
             country: nextProfile.country,
             currency: nextProfile.currency,
+            upi_id: nextProfile.upiId.trim(),
           }),
         }, token);
         applyRemoteUser(remote);
@@ -1230,6 +1347,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         deleteGroup,
         toggleSettlement,
         addFriend,
+        shareGroup,
+        refreshSharedSplits,
+        parseSplit,
+        lookupUser,
         updateProfile,
         askAssistant,
         parseQuickAdd,

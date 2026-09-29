@@ -14,6 +14,8 @@ class User(Base):
     location = Column(String, nullable=True)
     country = Column(String, nullable=False, default="India")
     currency = Column(String, nullable=False, default="INR")
+    public_id = Column(Integer, unique=True, index=True, nullable=True)  # random 8-digit FinanceAI ID shown to users
+    upi_id = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -91,3 +93,17 @@ class EmailOTP(Base):
     last_sent_at = Column(DateTime, nullable=False)
     consumed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class SharedSplit(Base):
+    """A split bill published via a public link so friends can see their share and pay the owner by UPI."""
+    __tablename__ = "shared_splits"
+    token = Column(String(40), primary_key=True)
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    client_id = Column(String(64), index=True, nullable=False)  # the bill's id in the owner's app, so re-sharing updates the same link
+    title = Column(String(120), nullable=False)
+    total = Column(Numeric(12, 2), nullable=False)
+    currency = Column(String(8), nullable=False, default="INR")
+    participants = Column(JSON, nullable=False)  # [{key, name, amount, settled, claimed_at}]
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)

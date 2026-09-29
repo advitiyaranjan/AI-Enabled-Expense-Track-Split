@@ -40,3 +40,8 @@ def chat(payload: schemas.ChatRequest, today: date | None = None, db: Session = 
     ctx = ai_service.build_context(txs, budgets, current_user.currency or "USD", today or date.today())
     history = [{"role": turn.role, "content": turn.content} for turn in payload.history]
     return ai_service.chat(payload.message, history, ctx)
+
+
+@router.post("/parse-split")
+def parse_split(payload: schemas.ParseSplitRequest, current_user=Depends(get_current_user)):
+    return ai_service.parse_split(payload.text, payload.friends)

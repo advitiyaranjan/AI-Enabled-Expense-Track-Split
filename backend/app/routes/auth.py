@@ -4,6 +4,7 @@ from .. import models, schemas
 from ..database import get_db
 from ..auth import get_password_hash, verify_password, create_access_token, get_current_user
 from ..services import otp_service
+from ..services.user_ids import new_public_id
 from ..services.email_service import send_email_changed_notice
 import logging
 
@@ -63,6 +64,7 @@ def verify_otp(body: schemas.VerifyOtpRequest, db: Session = Depends(get_db)):
             location=data.get("location"),
             country=data.get("country") or "India",
             currency=data.get("currency") or "INR",
+            public_id=new_public_id(db),
         )
         db.add(user)
         challenge.payload = None  # drop the stored password hash once it's been used
@@ -91,10 +93,10 @@ def update_me(payload: schemas.UserUpdate, db: Session = Depends(get_db), curren
     if payload.email and payload.email != current_user.email:
         # Email changes must prove ownership of the new address via /auth/change-email
         raise HTTPException(status_code=400, detail="Email changes need verification. Use the Change email option.")
-    for field in ("name", "phone", "location", "country", "currency"):
+    for field in ("name", "phone", "location", "country", "currency", "upi_id"):
         value = getattr(payload, field)
         if value is not None:
-            setattr(current_user, field, value)
+            setattr(current_user, field, value or None if field == "upi_id" else value)
     db.add(current_user)
     db.commit()
     db.refresh(current_user)

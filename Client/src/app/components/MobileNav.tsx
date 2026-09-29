@@ -67,7 +67,10 @@ export function MobileNav() {
               <div className="mb-3 flex items-center justify-between px-1">
                 <div className="min-w-0">
                   <p className="truncate font-semibold">{profile.displayName}</p>
-                  <p className="truncate text-xs text-muted-foreground">{profile.email}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {profile.publicId ? `ID ${profile.publicId} · ` : ""}
+                    {profile.email}
+                  </p>
                 </div>
                 <button onClick={() => setMoreOpen(false)} className="rounded-xl p-2 hover:bg-muted" aria-label="Close menu">
                   <X className="h-5 w-5" />

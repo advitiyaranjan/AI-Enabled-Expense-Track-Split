@@ -28,21 +28,26 @@ export function Profile() {
     phone: profile.phone,
     location: profile.location,
     country: profile.country,
+    upiId: profile.upiId,
   };
   const [draft, setDraft] = useState(accountFields);
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [changingEmail, setChangingEmail] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // Re-sync the form only when the saved account data changes, so toggling a preference doesn't wipe unsaved edits
   useEffect(() => {
     setDraft(accountFields);
-  }, [profile.displayName, profile.email, profile.phone, profile.location, profile.country]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [profile.displayName, profile.email, profile.phone, profile.location, profile.country, profile.upiId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const dirty = (Object.keys(accountFields) as Array<keyof typeof accountFields>).some((key) => draft[key] !== accountFields[key]);
 
   async function handleSave() {
     if (!draft.displayName.trim()) return setMessage({ tone: "error", text: "Display name can't be empty." });
+    if (draft.upiId.trim() && !/^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z][a-zA-Z0-9]{1,63}$/.test(draft.upiId.trim())) {
+      return setMessage({ tone: "error", text: "That UPI ID doesn't look right. It should look like name@okaxis or 98xxxxxx@ybl." });
+    }
     setSaving(true);
     const result = await updateProfile(draft);
     setSaving(false);
@@ -158,6 +163,44 @@ export function Profile() {
             </div>
 
             <div className="grid gap-4">
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
+                <div>
+                  <p className="text-xs text-muted-foreground">Your FinanceAI ID</p>
+                  <p className="font-mono text-xl font-bold tracking-widest">{profile.publicId ?? "--------"}</p>
+                  <p className="text-xs text-muted-foreground">Friends can add you to a split with this number.</p>
+                </div>
+                {profile.publicId ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(String(profile.publicId)).then(() => {
+                        setCopied(true);
+                        window.setTimeout(() => setCopied(false), 1500);
+                      });
+                    }}
+                    className="shrink-0 rounded-xl border border-border px-3 py-2 text-sm font-medium hover:border-primary"
+                  >
+                    {copied ? "Copied" : "Copy"}
+                  </button>
+                ) : null}
+              </div>
+
+              <label className="grid gap-2">
+                <span className="text-sm text-muted-foreground">UPI ID (to receive split payments)</span>
+                <input
+                  type="text"
+                  inputMode="email"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  value={draft.upiId}
+                  placeholder="yourname@okaxis"
+                  onChange={(event) => setDraft({ ...draft, upiId: event.target.value })}
+                  className="rounded-2xl border border-border bg-input-background px-4 py-3 outline-none transition-colors focus:border-primary"
+                />
+                <span className="text-xs text-muted-foreground">Shown on payment links for bills you paid, so friends can pay you back in one tap.</span>
+              </label>
+
               <label className="grid gap-2">
                 <span className="text-sm text-muted-foreground">Display name</span>
                 <input type="text" value={draft.displayName} onChange={(event) => setDraft({ ...draft, displayName: event.target.value })} className="rounded-2xl border border-border bg-input-background px-4 py-3 outline-none transition-colors focus:border-primary" />

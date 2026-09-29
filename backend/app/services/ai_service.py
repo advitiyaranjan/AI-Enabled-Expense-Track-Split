@@ -365,3 +365,156 @@ def chat(message: str, history: list[dict], ctx: dict) -> dict:
         except Exception:
             pass
     return {"reply": rules_reply(message, ctx), "source": "rules", "suggestions": SUGGESTIONS}
+
+
+# --------------------------------------------------------------------------- split bills
+
+_SELF_WORDS = {"i", "me", "myself", "you", "we", "us"}
+_NAME_STOP = {"and", "with", "for", "at", "the", "a", "an", "paid", "split", "equally", "between", "among", "dinner", "lunch",
+              "trip", "bill", "total", "each", "by", "on", "to", "from", "of", "in", "rs", "inr", "rupees", "percent", "owes", "pays",
+              "yesterday", "today", "tonight", "custom", "equal", "percentage", "was", "is"}
+
+
+def _match_friend(token: str, friends: list[str]) -> str | None:
+    """Resolve 'sarah' or 'Sarah Chen' to a known friend's full name."""
+    t = token.strip().lower()
+    for friend in friends:
+        f = friend.lower()
+        if t == f or t == f.split()[0]:
+            return friend
+    return None
+
+
+def heuristic_parse_split(text: str, friends: list[str]) -> dict:
+    lowered = text.lower()
+    people: list[str] = []
+
+    def add_person(raw: str) -> str | None:
+        raw = raw.strip(" .,:;")
+        if not raw or raw.lower() in _SELF_WORDS or raw.lower() in _NAME_STOP:
+            return None
+        name = _match_friend(raw, friends) or raw.title()
+        if name not in people:
+            people.append(name)
+        return name
+
+    # Known friends mentioned anywhere (first name or full name)
+    for friend in friends:
+        first = re.escape(friend.split()[0].lower())
+        if re.search(rf"\b({re.escape(friend.lower())}|{first})\b", lowered):
+            add_person(friend)
+
+    # "with Sarah, Mike and Emily" / "between A and B"
+    for m in re.finditer(r"\b(?:with|between|among)\s+((?:[A-Za-z][a-z]+)(?:\s*(?:,|\band\b|&)\s*[A-Za-z][a-z]+)*)", text):
+        for part in re.split(r"\s*(?:,|\band\b|&)\s*", m.group(1)):
+            if part and part[0].isupper():
+                add_person(part)
+
+    # Per-person shares: "Sarah 500", "Mike: 40%", "Emily owes 300", "me 400".
+    # Unknown capitalized words only count as people in list position (after with/,/:/and), so
+    # "Barbeque Nation 2400" or "Groceries 1200" aren't mistaken for people.
+    shares: dict[str, float] = {}
+    percents: dict[str, float] = {}
+    assigned_spans = []
+    share_re = r"\b([A-Za-z][a-z]*)\s*(?:owes|pays|:|-|=)?\s*(?:rs\.?|₹|\$)?\s*(\d+(?:\.\d+)?)\s*(%|percent)?"
+    for m in re.finditer(share_re, text):
+        who = m.group(1)
+        if who.lower() in _NAME_STOP:
+            continue
+        before = text[:m.start()].rstrip()
+        in_list = bool(re.search(r"(?:[,:;&]|\band|\bwith|\bbetween|\bamong)$", before, re.I))
+        if who.lower() in _SELF_WORDS:
+            target = "you"
+        elif _match_friend(who, friends) or who in people or (who[0].isupper() and in_list):
+            target = add_person(who)
+        else:
+            target = None
+        if target is None:
+            continue
+        (percents if m.group(3) else shares)[target] = float(m.group(2))
+        assigned_spans.append(m.span())
+
+    # Payer: "Rahul paid", "paid by Rahul", "I paid"
+    payer = "you"
+    m = re.search(r"\bpaid by ([A-Za-z]+)|\b([A-Za-z]+) paid\b|\b([A-Za-z]+) (?:covered|picked up|got) the (?:bill|tab|check)", text, re.I)
+    if m:
+        who = next(g for g in m.groups() if g)
+        if who.lower() not in _SELF_WORDS:
+            payer = add_person(who) or "you"
+
+    # Total: the first amount not attributed to a person (usually "Dinner 2400 ..."), else the sum of shares
+    total = None
+    for m in re.finditer(r"(?:rs\.?|₹|\$)?\s*(\d[\d,]*(?:\.\d+)?)\s*(k)?\b(?!\s*(?:%|percent))", text, re.I):
+        if any(start <= m.start(1) < end for start, end in assigned_spans):
+            continue
+        total = float(m.group(1).replace(",", "")) * (1000 if m.group(2) else 1)
+        break
+    if total is None and shares:
+        total = round(sum(shares.values()), 2)
+
+    mode = "percentage" if percents else "custom" if shares else "equal"
+    if mode == "custom" and total and "you" not in shares:
+        shares["you"] = max(0.0, round(total - sum(shares.values()), 2))
+    if mode == "percentage" and "you" not in percents:
+        percents["you"] = max(0.0, round(100 - sum(percents.values()), 2))
+    participants = [{"name": p, "amount": shares.get(p), "percentage": percents.get(p)} for p in people]
+
+    title_match = re.match(r"\s*(.+?)(?=\s+(?:with|between|among|split|paid)\b|\s*:|\s*(?:rs\.?|₹|\$)?\s*\d|,|$)", text, re.I)
+    title = title_match.group(1).strip(" .,-") if title_match else ""
+    if not title or title.lower() in _SELF_WORDS or len(title) < 2:
+        title = "Shared bill"
+    return {
+        "title": title[:1].upper() + title[1:80],
+        "total": round(total, 2) if total else None,
+        "payer": payer,
+        "mode": mode,
+        "participants": participants,
+        "your_amount": shares.get("you") if mode == "custom" else None,
+        "your_percentage": percents.get("you") if mode == "percentage" else None,
+        "source": "rules",
+    }
+
+
+def parse_split(text: str, friends: list[str]) -> dict:
+    fallback = heuristic_parse_split(text, friends)
+    if not ai_enabled():
+        return fallback
+    parsed = chat_json([
+        {"role": "system", "content": (
+            "Turn a short note about a shared bill into JSON with keys: title (short, Title Case), total (number or null), "
+            "payer ('you' if the user paid, otherwise the other person's name), mode ('equal', 'custom' or 'percentage'), "
+            "participants (people OTHER than the user: [{name, amount (number|null), percentage (number|null)}]), "
+            "your_amount (the user's own share for custom mode, else null), your_percentage (for percentage mode, else null). "
+            "'I', 'me' and 'we' refer to the user. Amounts like '2k' mean 2000. "
+            f"Known friends (use these exact names when they match a first name): {', '.join(friends[:100]) or 'none'}."
+        )},
+        {"role": "user", "content": text},
+    ], max_tokens=400)
+    if not parsed or not isinstance(parsed.get("participants"), list):
+        return fallback
+
+    def num(value):
+        try:
+            return round(float(value), 2) if value not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+
+    participants = []
+    for p in parsed["participants"][:20]:
+        name = str((p or {}).get("name") or "").strip()
+        if not name or name.lower() in _SELF_WORDS:
+            continue
+        participants.append({"name": _match_friend(name, friends) or name[:60], "amount": num(p.get("amount")), "percentage": num(p.get("percentage"))})
+    mode = parsed.get("mode") if parsed.get("mode") in ("equal", "custom", "percentage") else fallback["mode"]
+    payer = str(parsed.get("payer") or "you")
+    payer = "you" if payer.lower() in _SELF_WORDS else (_match_friend(payer, friends) or payer)
+    return {
+        "title": str(parsed.get("title") or fallback["title"])[:80],
+        "total": num(parsed.get("total")) or fallback["total"],
+        "payer": payer,
+        "mode": mode,
+        "participants": participants or fallback["participants"],
+        "your_amount": num(parsed.get("your_amount")),
+        "your_percentage": num(parsed.get("your_percentage")),
+        "source": "ai",
+    }
