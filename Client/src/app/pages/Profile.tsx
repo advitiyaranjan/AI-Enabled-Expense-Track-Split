@@ -137,7 +137,7 @@ export function Profile() {
         </div>
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="rounded-3xl border border-border bg-card p-6">
           <form
             onSubmit={(event) => {
@@ -174,7 +174,7 @@ export function Profile() {
                 <span className="text-xs text-muted-foreground">Changing your email requires your password and a code sent to the new address.</span>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <label className="grid gap-2">
                   <span className="text-sm text-muted-foreground">Phone</span>
                   <input type="tel" value={draft.phone} onChange={(event) => setDraft({ ...draft, phone: event.target.value })} className="rounded-2xl border border-border bg-input-background px-4 py-3 outline-none transition-colors focus:border-primary" />
@@ -185,7 +185,7 @@ export function Profile() {
                 </label>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <label className="grid gap-2">
                   <span className="text-sm text-muted-foreground">Country</span>
                   <select value={draft.country} onChange={(event) => setDraft({ ...draft, country: event.target.value })} className="rounded-2xl border border-border bg-input-background px-4 py-3 outline-none transition-colors focus:border-primary">
@@ -244,7 +244,7 @@ export function Profile() {
         </div>
       </motion.div>
 
-      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="grid gap-6 lg:grid-cols-2">
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="rounded-3xl border border-border bg-card p-6">
           <h3 className="mb-1 flex items-center gap-2 text-lg font-semibold"><Database className="h-5 w-5 text-primary" /> Your data</h3>
           <p className="mb-4 text-sm text-muted-foreground">Take your data anywhere, or bring in history from your bank.</p>

@@ -1,4 +1,5 @@
-import { Outlet, NavLink, Navigate } from "react-router";
+import { Outlet, NavLink, Navigate, ScrollRestoration } from "react-router";
+import { MobileNav } from "./MobileNav";
 import {
   LayoutDashboard,
   ScanLine,
@@ -122,51 +123,31 @@ export function RootLayout() {
         </div>
       </aside>
 
-      <div className="flex min-h-screen flex-1 flex-col">
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur">
-          <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 lg:px-8">
-            <div>
-              <p className="text-sm text-muted-foreground">Welcome back</p>
-              <h2 className="text-xl font-semibold">{profile.displayName}</h2>
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 lg:px-8 lg:py-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-secondary-bright lg:hidden">
+                <TrendingUp className="h-5 w-5 text-white" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground lg:text-sm">Welcome back</p>
+                <h2 className="truncate text-lg font-semibold lg:text-xl">{profile.displayName}</h2>
+              </div>
             </div>
             <div className="flex items-center gap-3">
               <BackendIndicator />
-              <button
-                onClick={logout}
-                className="rounded-xl border border-border px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:hidden"
-              >
-                Sign out
-              </button>
             </div>
           </div>
         </header>
 
-        <main className="flex-1 pb-24 lg:pb-0">
+        <main className="flex-1 pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-0">
           <Outlet />
         </main>
+        <ScrollRestoration />
       </div>
 
-      <nav className="glass fixed inset-x-0 bottom-0 z-50 border-t border-sidebar-border lg:hidden">
-        <div className="flex gap-1 overflow-x-auto px-2 py-2">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              end={item.path === "/"}
-              className={({ isActive }) =>
-                `min-w-max rounded-xl px-3 py-2 text-xs transition-all ${
-                  isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground"
-                }`
-              }
-            >
-              <div className="flex items-center gap-2">
-                <item.icon className="h-4 w-4" />
-                <span>{item.label}</span>
-              </div>
-            </NavLink>
-          ))}
-        </div>
-      </nav>
+      <MobileNav />
     </div>
   );
 }

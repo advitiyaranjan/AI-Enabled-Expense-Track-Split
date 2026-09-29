@@ -122,7 +122,7 @@ export function Budget() {
             ) : (
               <>
                 <p className="mb-4 text-sm text-muted-foreground">Based on your average spend over recent months, plus 10% headroom.</p>
-                <div className="grid gap-2 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {suggestions.map((suggestion) => {
                     const current = budgets.find((budget) => budget.name === suggestion.category);
                     return (
@@ -148,7 +148,7 @@ export function Budget() {
       </AnimatePresence>
 
       <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="rounded-3xl border border-border bg-card p-6 lg:p-8">
-        <div className="grid gap-6 sm:grid-cols-4">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-4">
           <div>
             <p className="text-sm text-muted-foreground">Total budget</p>
             <p className="mt-2 text-3xl font-bold">{formatMoney(totalBudget)}</p>
@@ -192,7 +192,7 @@ export function Budget() {
           No budgets yet. Add one, or let us suggest limits from your history.
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {statuses.map(({ budget, spent, projected, percentage, over, atRisk }, index) => (
             <motion.div
               key={budget.id}
@@ -317,7 +317,7 @@ export function Budget() {
                   </datalist>
                 </label>
 
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <label className="grid gap-2">
                     <span className="text-sm text-muted-foreground">Icon</span>
                     <input

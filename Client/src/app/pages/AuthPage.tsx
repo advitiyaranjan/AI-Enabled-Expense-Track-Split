@@ -152,7 +152,7 @@ export function AuthPage() {
 
             {mode === "register" ? (
               <>
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <label className="grid gap-2">
                     <span className="text-sm text-muted-foreground">Phone</span>
                     <div className="flex items-center gap-3 rounded-2xl border border-border bg-input-background px-4 py-3">

@@ -85,7 +85,7 @@ export function Dashboard() {
             </button>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div className="rounded-2xl bg-white/10 p-4 backdrop-blur">
               <div className="mb-2 flex items-center gap-2 text-sm text-white/80">
                 <ArrowDownRight className="h-4 w-4" />
@@ -118,7 +118,7 @@ export function Dashboard() {
 
       <QuickAdd />
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="rounded-3xl border border-border bg-card p-6">
           <div className="mb-4 flex items-center gap-2">
             <Gauge className="h-5 w-5 text-primary" />
@@ -177,7 +177,7 @@ export function Dashboard() {
         </motion.div>
       </div>
 
-      <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} className="grid gap-4 md:grid-cols-3">
+      <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-1 gap-4 md:grid-cols-3">
         {[
           { to: "/scan", icon: ScanLine, title: "Scan a receipt", text: "Snap a bill and AI fills in the expense.", tone: "text-primary bg-primary/10" },
           { to: "/split", icon: Users, title: "Split expenses", text: "Track shared bills and who owes whom.", tone: "text-income bg-income/10" },
@@ -195,7 +195,7 @@ export function Dashboard() {
         ))}
       </motion.div>
 
-      <div className="grid gap-6 lg:grid-cols-[1.75fr_1fr]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)]">
         <motion.div initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} className="rounded-3xl border border-border bg-card p-6">
           <div className="mb-6 flex items-center justify-between">
             <div>

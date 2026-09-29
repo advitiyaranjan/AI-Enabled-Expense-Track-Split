@@ -105,7 +105,7 @@ export function SplitExpenses() {
         </button>
       </motion.div>
 
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="grid gap-4 sm:grid-cols-2">
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="rounded-3xl bg-gradient-to-br from-income to-income-bright p-6 text-white shadow-lg shadow-income/20">
           <div className="mb-2 flex items-center gap-2 text-sm opacity-90">
             <Users className="h-5 w-5" />
@@ -128,7 +128,7 @@ export function SplitExpenses() {
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="rounded-3xl border border-border bg-card p-6">
           <h2 className="mb-1 text-xl font-semibold">Settle up</h2>
           <p className="mb-4 text-sm text-muted-foreground">Everything netted out across all your groups, one payment per person.</p>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {netBalances.map((entry) => (
               <div key={entry.id} className="flex items-center gap-3 rounded-2xl bg-muted/30 p-4">
                 <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-muted text-lg">{entry.avatar}</div>
@@ -265,7 +265,7 @@ export function SplitExpenses() {
                   />
                 </label>
 
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <label className="grid gap-2">
                     <span className="text-sm text-muted-foreground">Total amount ({profile.currency})</span>
                     <input
@@ -290,7 +290,7 @@ export function SplitExpenses() {
 
                 <div>
                   <span className="mb-2 block text-sm text-muted-foreground">Split mode</span>
-                  <div className="grid gap-2 sm:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                     {([
                       { value: "equal", label: "Equal", icon: Users },
                       { value: "custom", label: "Exact amounts", icon: DollarSign },
@@ -313,7 +313,7 @@ export function SplitExpenses() {
 
                 <div>
                   <span className="mb-2 block text-sm text-muted-foreground">Split with</span>
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     {friends.map((friend) => {
                       const selected = selectedFriends.some((entry) => entry.id === friend.id);
                       return (

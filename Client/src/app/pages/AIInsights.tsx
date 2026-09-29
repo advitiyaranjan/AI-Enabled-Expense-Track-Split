@@ -117,7 +117,7 @@ export function AIInsights() {
         </span>
       </motion.div>
 
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <div className="rounded-3xl border border-primary/20 bg-gradient-to-br from-primary/15 to-primary/5 p-6">
           <div className="mb-3 flex items-center gap-3">
             <Calendar className="h-5 w-5 text-primary" />
@@ -162,7 +162,7 @@ export function AIInsights() {
         </div>
       </motion.div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <motion.div initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} className="rounded-3xl border border-border bg-card p-6">
           <div className="mb-6 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">

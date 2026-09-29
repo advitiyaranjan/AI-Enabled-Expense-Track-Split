@@ -202,7 +202,7 @@ export function Transactions() {
 
       <QuickAdd compact />
 
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="grid gap-4 sm:grid-cols-2">
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="rounded-2xl border border-border bg-card p-5">
           <div className="mb-2 flex items-center gap-2 text-sm text-muted-foreground">
             <TrendingUp className="h-4 w-4 text-income" />
@@ -386,7 +386,7 @@ export function Transactions() {
                   </label>
                 ) : null}
 
-                <div className="grid gap-4 sm:grid-cols-3">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                   <label className="grid gap-2">
                     <span className="text-sm text-muted-foreground">Amount ({profile.currency})</span>
                     <input

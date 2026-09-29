@@ -1,4 +1,4 @@
-import { createBrowserRouter } from "react-router";
+import { createBrowserRouter, Navigate } from "react-router";
 import { RootLayout } from "./components/RootLayout";
 import { Dashboard } from "./pages/Dashboard";
 import { ReceiptScanner } from "./pages/ReceiptScanner";
@@ -25,6 +25,8 @@ export const router = createBrowserRouter([
       { path: "insights", Component: AIInsights },
       { path: "budget", Component: Budget },
       { path: "profile", Component: Profile },
+      // Unknown URLs land on the dashboard (with navigation) instead of a bare 404 page
+      { path: "*", element: <Navigate to="/" replace /> },
     ],
   },
 ]);

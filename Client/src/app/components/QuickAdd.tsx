@@ -106,7 +106,7 @@ export function QuickAdd({ compact = false }: { compact?: boolean }) {
             className="overflow-hidden"
           >
             <div className="mt-4 grid gap-3 rounded-2xl border border-border bg-card p-4 sm:grid-cols-[1fr_auto]">
-              <div className="grid gap-3 sm:grid-cols-4">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
                 <label className="grid gap-1 sm:col-span-2">
                   <span className="text-xs text-muted-foreground">Name</span>
                   <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} className="rounded-xl border border-border bg-input-background px-3 py-2 outline-none focus:border-primary" />
