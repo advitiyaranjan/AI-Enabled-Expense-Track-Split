@@ -7,7 +7,7 @@ from ..config import settings
 from .categorize import EXPENSE_CATEGORIES, detect_category
 
 try:
-    from openai import AuthenticationError, BadRequestError, NotFoundError, OpenAI, PermissionDeniedError
+    from openai import AuthenticationError, BadRequestError, NotFoundError, OpenAI, PermissionDeniedError, RateLimitError
 except Exception:
     OpenAI = None
 
@@ -75,7 +75,9 @@ def ai_status() -> dict:
     if not ai_enabled():
         return {"enabled": False, "model": None, "ready": False, "error": "no_api_key"}
     model = resolve_model()
-    return {"enabled": True, "model": model, "ready": model is not None, "error": _model_state["error"]}
+    # A key with no credits resolves models fine but every request is refused
+    ready = model is not None and _model_state["error"] != "insufficient_quota"
+    return {"enabled": True, "model": model, "ready": ready, "error": _model_state["error"]}
 
 
 def complete(messages: list[dict], *, effort: str = "low", max_output: int = 800, json_mode: bool = False, temperature: float = 0) -> str | None:
@@ -98,6 +100,7 @@ def complete(messages: list[dict], *, effort: str = "low", max_output: int = 800
     for _ in range(4):
         try:
             response = client.chat.completions.create(**kwargs)
+            _model_state["error"] = None  # e.g. credits were topped up
             return response.choices[0].message.content or ""
         except BadRequestError as exc:
             # Adapt to parameters a particular model doesn't support, then retry
@@ -115,6 +118,13 @@ def complete(messages: list[dict], *, effort: str = "low", max_output: int = 800
             else:
                 logger.warning("OpenAI request failed for %s: %s", model, message[:300])
                 return None
+        except RateLimitError as exc:
+            if "insufficient_quota" in str(exc) or "credit" in str(exc):
+                _model_state["error"] = "insufficient_quota"
+                logger.error("OpenAI account has no credits; using the rules engine until billing is topped up")
+            else:
+                logger.warning("OpenAI rate limit for %s: %s", model, exc)
+            return None
         except (NotFoundError, PermissionDeniedError) as exc:
             # Access to the model changed since we resolved it: re-resolve on the next request
             logger.warning("Model %s became unavailable: %s", model, exc)

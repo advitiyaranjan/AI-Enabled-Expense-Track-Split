@@ -1,11 +1,14 @@
 from collections import Counter
 from datetime import date
-from fastapi import APIRouter, Depends
+import hmac
+import os
+import time
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 from .. import schemas
 from ..auth import get_current_user
 from ..database import get_db
-from ..services import ai_service, analytics
+from ..services import ai_service, analytics, openai_service
 from ..services.openai_service import ai_status as openai_ai_status
 from .insights import load_user_transactions
 
@@ -46,3 +49,31 @@ def chat(payload: schemas.ChatRequest, today: date | None = None, db: Session = 
 @router.post("/parse-split")
 def parse_split(payload: schemas.ParseSplitRequest, current_user=Depends(get_current_user)):
     return ai_service.parse_split(payload.text, payload.friends)
+
+
+@router.get("/probe", include_in_schema=False)
+def ai_probe(x_probe_token: str | None = Header(default=None)):
+    """Ops check: run each AI feature once. Disabled unless AI_PROBE_TOKEN is set on the server."""
+    expected = os.getenv("AI_PROBE_TOKEN", "")
+    if not expected or not x_probe_token or not hmac.compare_digest(expected, x_probe_token):
+        raise HTTPException(status_code=404, detail="Not Found")
+    today = date.today()
+    results = {"model": openai_ai_status()}
+
+    def timed(name, fn):
+        start = time.perf_counter()
+        try:
+            value = fn()
+            results[name] = {"seconds": round(time.perf_counter() - start, 1), "result": value}
+        except Exception as exc:  # noqa: BLE001
+            results[name] = {"seconds": round(time.perf_counter() - start, 1), "error": repr(exc)[:300]}
+
+    timed("quick_add", lambda: ai_service.parse_transaction("coffee 4.50 at Starbucks yesterday", today, {}))
+    timed("split", lambda: ai_service.parse_split("Dinner at Barbeque Nation 2400 with Sarah and Mike, Mike paid", ["Sarah Chen", "Mike Johnson"]))
+    timed("receipt_text", lambda: openai_service.parse_receipt_text("FRESH MART\n14/04/2026\nMilk 3.50\nBread 2.25\nSubtotal 5.75\nTax 0.46\nTotal 6.21"))
+    ctx = ai_service.build_context(
+        [{"id": 1, "name": "Salary", "amount": 50000, "date": today.replace(day=1), "category": "Income", "type": "income"},
+         {"id": 2, "name": "Rent", "amount": -15000, "date": today.replace(day=2), "category": "Utilities", "type": "expense"}],
+        [{"name": "Utilities", "limit": 16000}], "INR", today)
+    timed("chat", lambda: ai_service.chat("Can I afford a 5000 purchase this month?", [], ctx))
+    return results

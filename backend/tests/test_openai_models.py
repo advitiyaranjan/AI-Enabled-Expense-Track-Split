@@ -1,18 +1,20 @@
 """Model selection and request-shape tests using a fake OpenAI client (no network, no key)."""
 import httpx
 import pytest
-from openai import BadRequestError, NotFoundError
+from openai import BadRequestError, NotFoundError, RateLimitError
 
 from app.services import openai_service as svc
 
 
 def _error(cls, message):
     request = httpx.Request("POST", "https://api.openai.com/v1/x")
-    return cls(message, response=httpx.Response(400 if cls is BadRequestError else 404, request=request), body=None)
+    status = {BadRequestError: 400, NotFoundError: 404, RateLimitError: 429}[cls]
+    return cls(message, response=httpx.Response(status, request=request), body=None)
 
 
 class FakeClient:
-    def __init__(self, available, reject_params=()):
+    def __init__(self, available, reject_params=(), no_credits=False):
+        self.no_credits = no_credits
         self.available = set(available)
         self.reject_params = set(reject_params)
         self.calls = []
@@ -26,6 +28,8 @@ class FakeClient:
         class Completions:
             def create(self, **kwargs):
                 outer.calls.append(dict(kwargs))
+                if outer.no_credits:
+                    raise _error(RateLimitError, "You have no credits remaining. insufficient_quota")
                 for param in outer.reject_params:
                     if param in kwargs:
                         raise _error(BadRequestError, f"Unsupported parameter: '{param}' is not supported with this model.")
@@ -50,8 +54,8 @@ class FakeClient:
 
 @pytest.fixture
 def fake(monkeypatch):
-    def install(available, reject_params=()):
-        client = FakeClient(available, reject_params)
+    def install(available, reject_params=(), no_credits=False):
+        client = FakeClient(available, reject_params, no_credits)
         monkeypatch.setattr(svc.settings, "OPENAI_API_KEY", "sk-test")
         monkeypatch.setattr(svc.settings, "OPENAI_MODEL", "gpt-6-astra")
         monkeypatch.setattr(svc, "get_client", lambda: client)
@@ -100,3 +104,12 @@ def test_adapts_to_unsupported_parameters(fake):
 def test_status_reports_model(fake):
     fake({"gpt-6.1-sol"})
     assert svc.ai_status() == {"enabled": True, "model": "gpt-6.1-sol", "ready": True, "error": None}
+
+
+def test_no_credits_marks_ai_not_ready_until_a_request_succeeds(fake):
+    client = fake({"gpt-6-astra"}, no_credits=True)
+    assert svc.complete([{"role": "user", "content": "hi"}]) is None
+    assert svc.ai_status()["ready"] is False and svc.ai_status()["error"] == "insufficient_quota"
+    client.no_credits = False  # credits added
+    assert svc.complete([{"role": "user", "content": "hi"}]) is not None
+    assert svc.ai_status()["ready"] is True
