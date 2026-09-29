@@ -280,12 +280,8 @@ const REGION_TO_COUNTRY: Record<string, string> = {
   AE: "United Arab Emirates",
 };
 
-const defaultFriends: Friend[] = [
-  { id: "sarah", name: "Sarah Chen", avatar: "👩" },
-  { id: "mike", name: "Mike Johnson", avatar: "👨" },
-  { id: "emily", name: "Emily Rodriguez", avatar: "👧" },
-  { id: "david", name: "David Kim", avatar: "🧑" },
-];
+// Placeholder people shipped in early versions; never suggest them
+const DEMO_FRIEND_IDS = new Set(["sarah", "mike", "emily", "david"]);
 
 const defaultBudgets: BudgetCategory[] = [
   { id: "food-dining", name: "Food & Dining", icon: "🍽️", limit: 500, color: "#06B6D4" },
@@ -705,7 +701,18 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   });
   const [groups, setGroups] = useScopedState<ExpenseGroup[]>("groups", owner, () => []);
   const [customFriends, setCustomFriends] = useScopedState<Friend[]>("friends", owner, () => []);
-  const friends = useMemo(() => [...defaultFriends, ...customFriends], [customFriends]);
+  // Real people only: ones the user added (by name or FinanceAI ID) plus everyone from past splits
+  const friends = useMemo(() => {
+    const known = new Map<string, Friend>();
+    for (const friend of customFriends) known.set(friend.id, friend);
+    for (const group of groups) {
+      for (const person of group.participants) {
+        if (person.isYou || DEMO_FRIEND_IDS.has(person.id) || known.has(person.id)) continue;
+        known.set(person.id, { id: person.id, name: person.name, avatar: person.avatar, publicId: person.publicId, upiId: person.upiId });
+      }
+    }
+    return [...known.values()];
+  }, [customFriends, groups]);
 
   const isAuthenticated = Boolean(token && profile.email);
   const connected = backendStatus === "connected" && Boolean(token);

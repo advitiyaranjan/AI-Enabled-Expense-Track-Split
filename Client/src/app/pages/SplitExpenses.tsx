@@ -62,6 +62,20 @@ export function SplitExpenses() {
   const remaining = target - enteredSum;
   const splitValid = splitMode === "equal" || Math.abs(remaining) < 0.01;
 
+  // While typing, suggest people from earlier splits (by name or FinanceAI ID)
+  const query = newFriend.trim().toLowerCase();
+  const suggestions = query
+    ? friends
+        .filter((friend) => !selectedFriends.some((entry) => entry.id === friend.id))
+        .filter((friend) => friend.name.toLowerCase().split(/\s+/).some((part) => part.startsWith(query)) || friend.name.toLowerCase().includes(query) || String(friend.publicId ?? "").startsWith(query))
+        .slice(0, 5)
+    : [];
+
+  function pickSuggestion(friend: Friend) {
+    setSelectedFriends((current) => (current.some((entry) => entry.id === friend.id) ? current : [...current, friend]));
+    setNewFriend("");
+  }
+
   function toggleFriend(friend: Friend) {
     setSelectedFriends((current) => {
       const exists = current.some((entry) => entry.id === friend.id);
@@ -516,38 +530,60 @@ export function SplitExpenses() {
 
                 <div>
                   <span className="mb-2 block text-sm text-muted-foreground">Split with</span>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    {friends.map((friend) => {
-                      const selected = selectedFriends.some((entry) => entry.id === friend.id);
-                      return (
-                        <button
-                          key={friend.id}
-                          onClick={() => toggleFriend(friend)}
-                          className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition-all ${selected ? "border-primary bg-primary/10" : "border-border bg-input-background"}`}
-                        >
-                          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-muted text-lg">{friend.avatar}</div>
-                          <span className="flex-1 font-medium">{friend.name}</span>
-                          {selected ? <Check className="h-5 w-5 text-primary" /> : null}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  {selectedFriends.length > 0 ? (
+                    <div className="mb-3 flex flex-wrap gap-2">
+                      {selectedFriends.map((friend) => (
+                        <span key={friend.id} className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 py-1 pl-1 pr-2 text-sm">
+                          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-xs">{friend.avatar}</span>
+                          {friend.name}
+                          {friend.publicId ? <span className="text-xs text-muted-foreground">#{friend.publicId}</span> : null}
+                          <button type="button" onClick={() => toggleFriend(friend)} aria-label={`Remove ${friend.name}`} className="rounded-full p-0.5 hover:bg-muted">
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mb-3 text-sm text-muted-foreground">Add people by name or FinanceAI ID.</p>
+                  )}
                   <form
-                    className="mt-3 flex gap-2"
+                    className="relative mt-1 flex gap-2"
                     onSubmit={(event) => {
                       event.preventDefault();
-                      handleAddFriend();
+                      const match = suggestions.find((friend) => friend.name.toLowerCase() === newFriend.trim().toLowerCase());
+                      if (match) pickSuggestion(match);
+                      else handleAddFriend();
                     }}
                   >
                     <input
                       value={newFriend}
                       onChange={(event) => setNewFriend(event.target.value)}
-                      placeholder="Add someone new..."
+                      placeholder="Type a name..."
+                      autoComplete="off"
                       className="flex-1 rounded-2xl border border-border bg-input-background px-4 py-2 outline-none focus:border-primary"
+                      aria-label="Person's name"
                     />
                     <button type="submit" disabled={!newFriend.trim()} className="inline-flex items-center gap-2 rounded-2xl border border-border px-4 py-2 text-sm hover:border-primary disabled:opacity-50">
                       <UserPlus className="h-4 w-4" /> Add
                     </button>
+                    {suggestions.length > 0 ? (
+                      <div className="absolute left-0 right-0 top-full z-10 mt-1 overflow-hidden rounded-2xl border border-border bg-popover shadow-xl" role="listbox">
+                        <p className="px-4 pt-2 text-xs text-muted-foreground">From your previous splits</p>
+                        {suggestions.map((friend) => (
+                          <button
+                            type="button"
+                            key={friend.id}
+                            onClick={() => pickSuggestion(friend)}
+                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-muted"
+                            role="option"
+                          >
+                            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-sm">{friend.avatar}</span>
+                            <span className="flex-1">{friend.name}</span>
+                            {friend.publicId ? <span className="text-xs text-muted-foreground">#{friend.publicId}</span> : null}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
                   </form>
                   <form
                     className="mt-2 flex gap-2"
