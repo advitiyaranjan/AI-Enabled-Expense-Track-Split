@@ -39,6 +39,20 @@ const SUGGESTED_QUESTIONS = [
   "What will I spend next month?",
 ];
 
+/** Render the small Markdown subset the assistant uses (**bold**, "- " bullets) without injecting HTML. */
+function renderChatText(text: string) {
+  return text.split("\n").map((line, lineIndex) => {
+    const bulleted = line.replace(/^\s*[-*]\s+/, "• ").replace(/^#{1,6}\s+/, "");
+    const parts = bulleted.split(/\*\*(.+?)\*\*/g);
+    return (
+      <span key={lineIndex}>
+        {parts.map((part, partIndex) => (partIndex % 2 === 1 ? <strong key={partIndex}>{part}</strong> : part))}
+        {"\n"}
+      </span>
+    );
+  });
+}
+
 export function AIInsights() {
   const { insights, transactions, profile, formatMoney, askAssistant, aiEnabled, aiModel, backendStatus } = useFinance();
   const chart = useChartTheme();
@@ -409,7 +423,7 @@ export function AIInsights() {
                     {message.source ? <span className="font-normal text-muted-foreground">· {message.source === "ai" ? "AI" : message.source === "rules" ? "rules engine" : "offline"}</span> : null}
                   </div>
                 ) : null}
-                <p className="whitespace-pre-line text-sm">{message.content}</p>
+                <p className="whitespace-pre-line text-sm">{message.role === "assistant" ? renderChatText(message.content) : message.content}</p>
                 {message.notice ? <p className="mt-2 border-t border-border pt-2 text-xs text-muted-foreground">{message.notice}</p> : null}
               </div>
             </div>
