@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Navigate } from "react-router";
 import { Globe2, Lock, Mail, MapPin, Phone, TrendingUp, User } from "lucide-react";
 import { motion } from "motion/react";
+import { GoogleSignInButton } from "../components/GoogleSignInButton";
 import { OtpStep } from "../components/OtpStep";
 import { COUNTRIES as countries, getCountryConfig, useFinance, type OtpChallenge } from "../lib/finance";
 
@@ -199,6 +200,9 @@ export function AuthPage() {
             </button>
             <p className="text-center text-xs text-muted-foreground">We'll email you a one-time code to verify it's you.</p>
           </form>
+          <div className="mt-4">
+            <GoogleSignInButton onError={setError} />
+          </div>
           </>
           )}
         </motion.div>

@@ -235,6 +235,7 @@ interface FinanceContextValue {
   login: (payload: UserCredentials) => Promise<Result<OtpChallenge>>;
   register: (payload: UserCredentials) => Promise<Result<OtpChallenge>>;
   verifyOtp: (challengeId: string, code: string) => Promise<Result>;
+  googleSignIn: (credential: string) => Promise<Result>;
   resendOtp: (challengeId: string) => Promise<Result<OtpChallenge>>;
   startEmailChange: (newEmail: string, password: string) => Promise<Result<OtpChallenge>>;
   confirmEmailChange: (challengeId: string, code: string) => Promise<Result>;
@@ -896,6 +897,25 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   }
 
   /** Step 2: exchange the emailed code for a session. */
+  /** Sign in with a Google ID token from the Google button (no OTP: Google verified the email). */
+  async function googleSignIn(credential: string): Promise<Result> {
+    try {
+      const response = await fetchJson<{ access_token: string; user: RemoteUser }>("/auth/google", {
+        method: "POST",
+        body: JSON.stringify({ credential }),
+      });
+      setBackendStatus("connected");
+      setToken(response.access_token);
+      applyRemoteUser(response.user);
+      setTransactions([]);
+      setInsights(emptyInsights);
+      await loadRemote(response.access_token).catch(() => undefined);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: errorMessage(error, "Google sign-in failed") };
+    }
+  }
+
   async function verifyOtp(challengeId: string, code: string): Promise<Result> {
     try {
       const response = await fetchJson<{ access_token: string; user: RemoteUser }>("/auth/verify-otp", {
@@ -1369,6 +1389,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         login,
         register,
         verifyOtp,
+        googleSignIn,
         resendOtp,
         startEmailChange,
         confirmEmailChange,

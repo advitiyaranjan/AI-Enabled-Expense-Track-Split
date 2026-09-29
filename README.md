@@ -36,6 +36,10 @@ SMTP_PASSWORD=<16-character App Password>   # Google Account → Security → 2-
 
 Locally, if SMTP isn't configured, codes are printed to the backend console. In production (Vercel) the server refuses to sign anyone in without working email rather than skipping verification.
 
+## Google sign-in
+
+Optional. Create a free OAuth Client ID at console.cloud.google.com → APIs & Services → Credentials → Create credentials → OAuth client ID → **Web application**. Add your site (e.g. `https://exptrack.advitiyaranjan.in`) under **Authorized JavaScript origins**, then set `GOOGLE_CLIENT_ID` on the backend. The button appears automatically. Google sign-ins skip the email code (Google already verified the address), and a Google email matching an existing account signs into that account. Tokens are verified on the server against Google's public keys; no Google SDK is used.
+
 ## AI features
 
 Every AI feature uses OpenAI when `OPENAI_API_KEY` is set (default model `gpt-4o-mini`). Without a key it falls back to a local rules engine, so the app stays fully usable.

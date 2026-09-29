@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from .. import models, schemas
+from ..config import settings
 from ..database import get_db
 from ..auth import get_password_hash, verify_password, create_access_token, get_current_user
 from ..services import otp_service
+from ..services.google_auth import GoogleTokenError, google_enabled, verify_google_credential
 from ..services.user_ids import new_public_id
 from ..services.email_service import send_email_changed_notice
 import logging
@@ -75,6 +77,38 @@ def verify_otp(body: schemas.VerifyOtpRequest, db: Session = Depends(get_db)):
             raise HTTPException(status_code=400, detail="Account not found. Please sign up.")
     db.commit()
     db.refresh(user)
+    return _session(user)
+
+
+@router.get("/config")
+def auth_config():
+    """Public: tells the sign-in page which options to show."""
+    return {"google_client_id": settings.GOOGLE_CLIENT_ID or None}
+
+
+@router.post("/google", response_model=schemas.AuthResponse)
+def google_sign_in(body: schemas.GoogleSignInRequest, db: Session = Depends(get_db)):
+    """Sign in or sign up with Google. Google has already verified the email, so no OTP step."""
+    if not google_enabled():
+        raise HTTPException(status_code=404, detail="Google sign-in isn't enabled")
+    try:
+        identity = verify_google_credential(body.credential)
+    except GoogleTokenError as exc:
+        raise HTTPException(status_code=401, detail=f"Google sign-in failed: {exc}")
+    user = db.query(models.User).filter(models.User.email == identity["email"]).first()
+    if user is None:
+        user = models.User(
+            name=identity["name"][:100],
+            email=identity["email"],
+            # Unusable password: this account signs in with Google (password login always fails)
+            password_hash=f"google${identity['sub']}",
+            country="India",
+            currency="INR",
+            public_id=new_public_id(db),
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
     return _session(user)
 
 

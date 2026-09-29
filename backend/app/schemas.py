@@ -254,3 +254,7 @@ class SplitClaimRequest(BaseModel):
 class ParseSplitRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=600)
     friends: List[str] = Field(default_factory=list, max_length=200)
+
+
+class GoogleSignInRequest(BaseModel):
+    credential: str = Field(..., min_length=20, max_length=4096)

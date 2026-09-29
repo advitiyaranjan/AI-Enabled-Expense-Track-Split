@@ -31,6 +31,9 @@ class Settings:
     AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
     AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
 
+    # OAuth Client ID from Google Cloud Console (Web application). Empty = Google sign-in hidden
+    GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     # Model for the assistant chat (reasoning over the user's data); comma-separated, best first
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4.1")
