@@ -32,7 +32,8 @@ class Settings:
     AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
 
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    # Preferred model(s), best first; falls back through openai_service.DEFAULT_MODEL_CHAIN if unavailable
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-6-astra")
 
     TESSERACT_CMD: str = os.getenv("TESSERACT_CMD", "")
 

@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta
 
 from . import analytics
 from .categorize import EXPENSE_CATEGORIES, detect_category, looks_like_income
-from .openai_service import ai_enabled, chat_json, get_client
+from .openai_service import ai_enabled, chat_json, complete
 from ..config import settings
 
 ALL_CATEGORIES = EXPENSE_CATEGORIES + ["Income"]
@@ -350,20 +350,16 @@ SYSTEM_PROMPT = (
 
 
 def chat(message: str, history: list[dict], ctx: dict) -> dict:
-    client = get_client()
-    if client is not None:
-        try:
-            messages = [{"role": "system", "content": SYSTEM_PROMPT.format(currency=ctx["currency"], context=json.dumps(ctx, default=str))}]
-            for turn in history[-10:]:
-                if turn.get("role") in ("user", "assistant") and turn.get("content"):
-                    messages.append({"role": turn["role"], "content": str(turn["content"])[:2000]})
-            messages.append({"role": "user", "content": message})
-            response = client.chat.completions.create(model=settings.OPENAI_MODEL, messages=messages, temperature=0.3, max_tokens=400)
-            reply = (response.choices[0].message.content or "").strip()
-            if reply:
-                return {"reply": reply, "source": "ai", "suggestions": SUGGESTIONS}
-        except Exception:
-            pass
+    if ai_enabled():
+        messages = [{"role": "system", "content": SYSTEM_PROMPT.format(currency=ctx["currency"], context=json.dumps(ctx, default=str))}]
+        for turn in history[-10:]:
+            if turn.get("role") in ("user", "assistant") and turn.get("content"):
+                messages.append({"role": turn["role"], "content": str(turn["content"])[:2000]})
+        messages.append({"role": "user", "content": message})
+        # Medium effort: the assistant reasons over the whole financial snapshot
+        reply = (complete(messages, effort="medium", max_output=700, temperature=0.3) or "").strip()
+        if reply:
+            return {"reply": reply, "source": "ai", "suggestions": SUGGESTIONS}
     return {"reply": rules_reply(message, ctx), "source": "rules", "suggestions": SUGGESTIONS}
 
 

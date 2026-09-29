@@ -1,16 +1,27 @@
 import base64
 import json
+import logging
 import re
 from datetime import datetime
 from ..config import settings
 from .categorize import EXPENSE_CATEGORIES, detect_category
 
 try:
-    from openai import OpenAI
+    from openai import AuthenticationError, BadRequestError, NotFoundError, OpenAI, PermissionDeniedError
 except Exception:
     OpenAI = None
 
+logger = logging.getLogger("financeai.ai")
+
 EMPTY_RECEIPT = {"amount": None, "date": None, "merchant": None, "category": None, "items": []}
+
+# Best first. OPENAI_MODEL (comma-separated) is tried before these; the first model the key can use wins.
+DEFAULT_MODEL_CHAIN = ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna", "gpt-5", "gpt-4.1", "gpt-4o-mini"]
+REASONING_PREFIXES = ("gpt-5", "gpt-6", "o1", "o3", "o4")
+# Reasoning tokens count against max_completion_tokens, so leave room beyond the visible answer
+REASONING_HEADROOM = {"low": 3000, "medium": 8000, "high": 16000}
+
+_model_state: dict = {"model": None, "checked": False, "error": None}
 
 
 def ai_enabled() -> bool:
@@ -20,29 +31,110 @@ def ai_enabled() -> bool:
 def get_client():
     if not ai_enabled():
         return None
-    return OpenAI(api_key=settings.OPENAI_API_KEY, timeout=30)
+    # Reasoning models can take a while on images and longer chats
+    return OpenAI(api_key=settings.OPENAI_API_KEY, timeout=90, max_retries=1)
 
 
-def chat_json(messages: list[dict], max_tokens: int = 800) -> dict | None:
-    """Run a chat completion that must return a JSON object. Returns None on any failure."""
+def model_chain() -> list[str]:
+    configured = [m.strip() for m in settings.OPENAI_MODEL.split(",") if m.strip()]
+    return configured + [m for m in DEFAULT_MODEL_CHAIN if m not in configured]
+
+
+def is_reasoning_model(model: str) -> bool:
+    return model.startswith(REASONING_PREFIXES)
+
+
+def resolve_model() -> str | None:
+    """Pick the best model this API key can actually use (cached per server instance)."""
+    if _model_state["checked"]:
+        return _model_state["model"]
     client = get_client()
     if client is None:
         return None
-    try:
-        response = client.chat.completions.create(
-            model=settings.OPENAI_MODEL,
-            messages=messages,
-            temperature=0,
-            max_tokens=max_tokens,
-            response_format={"type": "json_object"},
-        )
-        content = response.choices[0].message.content or ""
+    for model in model_chain():
         try:
-            return json.loads(content)
-        except Exception:
-            return _extract_json_from_text(content)
-    except Exception:
+            client.models.retrieve(model)
+            _model_state.update(model=model, checked=True, error=None)
+            logger.info("Using OpenAI model %s", model)
+            return model
+        except (NotFoundError, PermissionDeniedError):
+            continue  # not available to this key (e.g. limited rollout): try the next best
+        except AuthenticationError:
+            _model_state.update(model=None, checked=True, error="invalid_api_key")
+            logger.error("OpenAI rejected the API key")
+            return None
+        except Exception as exc:  # network hiccup: don't cache, try again on the next request
+            _model_state["error"] = type(exc).__name__
+            logger.warning("Could not reach OpenAI to check model %s: %s", model, exc)
+            return None
+    _model_state.update(model=None, checked=True, error="no_model_available")
+    return None
+
+
+def ai_status() -> dict:
+    if not ai_enabled():
+        return {"enabled": False, "model": None, "ready": False, "error": "no_api_key"}
+    model = resolve_model()
+    return {"enabled": True, "model": model, "ready": model is not None, "error": _model_state["error"]}
+
+
+def complete(messages: list[dict], *, effort: str = "low", max_output: int = 800, json_mode: bool = False, temperature: float = 0) -> str | None:
+    """One chat completion that works across model generations. Returns None if AI is unavailable or fails."""
+    client = get_client()
+    model = resolve_model() if client else None
+    if client is None or model is None:
         return None
+    kwargs: dict = {"model": model, "messages": messages}
+    if is_reasoning_model(model):
+        # Reasoning models reject temperature and cap output (including hidden reasoning) with max_completion_tokens
+        kwargs["reasoning_effort"] = effort
+        kwargs["max_completion_tokens"] = max_output + REASONING_HEADROOM.get(effort, 3000)
+    else:
+        kwargs["temperature"] = temperature
+        kwargs["max_tokens"] = max_output
+    if json_mode:
+        kwargs["response_format"] = {"type": "json_object"}
+
+    for _ in range(4):
+        try:
+            response = client.chat.completions.create(**kwargs)
+            return response.choices[0].message.content or ""
+        except BadRequestError as exc:
+            # Adapt to parameters a particular model doesn't support, then retry
+            message = str(exc)
+            if "reasoning_effort" in message and "reasoning_effort" in kwargs:
+                kwargs.pop("reasoning_effort")
+            elif "temperature" in message and "temperature" in kwargs:
+                kwargs.pop("temperature")
+            elif "max_tokens" in message and "max_tokens" in kwargs:
+                kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
+            elif "max_completion_tokens" in message and "max_completion_tokens" in kwargs:
+                kwargs["max_tokens"] = kwargs.pop("max_completion_tokens")
+            elif "response_format" in message and "response_format" in kwargs:
+                kwargs.pop("response_format")
+            else:
+                logger.warning("OpenAI request failed for %s: %s", model, message[:300])
+                return None
+        except (NotFoundError, PermissionDeniedError) as exc:
+            # Access to the model changed since we resolved it: re-resolve on the next request
+            logger.warning("Model %s became unavailable: %s", model, exc)
+            _model_state.update(model=None, checked=False)
+            return None
+        except Exception as exc:
+            logger.warning("OpenAI request failed for %s: %s", model, exc)
+            return None
+    return None
+
+
+def chat_json(messages: list[dict], max_tokens: int = 800, effort: str = "low") -> dict | None:
+    """Run a completion that must return a JSON object. Returns None on any failure."""
+    content = complete(messages, effort=effort, max_output=max_tokens, json_mode=True)
+    if not content:
+        return None
+    try:
+        return json.loads(content)
+    except Exception:
+        return _extract_json_from_text(content)
 
 
 def _extract_json_from_text(text: str):

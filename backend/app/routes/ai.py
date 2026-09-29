@@ -6,7 +6,7 @@ from .. import schemas
 from ..auth import get_current_user
 from ..database import get_db
 from ..services import ai_service, analytics
-from ..services.openai_service import ai_enabled
+from ..services.openai_service import ai_status as openai_ai_status
 from .insights import load_user_transactions
 
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -24,7 +24,8 @@ def merchant_category_history(txs: list[dict]) -> dict[str, str]:
 
 @router.get("/status")
 def ai_status(current_user=Depends(get_current_user)):
-    return {"ai_enabled": ai_enabled(), "suggestions": ai_service.SUGGESTIONS}
+    status = openai_ai_status()
+    return {"ai_enabled": status["ready"], "model": status["model"], "suggestions": ai_service.SUGGESTIONS}
 
 
 @router.post("/parse-transaction")

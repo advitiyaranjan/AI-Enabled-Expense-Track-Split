@@ -196,6 +196,7 @@ interface FinanceContextValue {
   loading: boolean;
   backendStatus: BackendStatus;
   aiEnabled: boolean;
+  aiModel: string | null;
   isAuthenticated: boolean;
   token: string;
   transactions: Transaction[];
@@ -681,6 +682,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [backendStatus, setBackendStatus] = useState<BackendStatus>("checking");
   const [aiEnabled, setAiEnabled] = useState(false);
+  const [aiModel, setAiModel] = useState<string | null>(null);
   const [token, setToken] = useState(() => readStorage("token", ""));
   const [profile, setProfile] = useState<ProfileData>(() =>
     normalizeProfile(readStorage("profile", {
@@ -750,11 +752,12 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     const [remoteTransactions, remoteInsights, status] = await Promise.all([
       fetchJson<Transaction[]>("/transactions/", undefined, activeToken),
       fetchJson<InsightPayload>(`/insights/?today=${todayISO()}`, undefined, activeToken),
-      fetchJson<{ ai_enabled: boolean }>("/ai/status", undefined, activeToken).catch(() => ({ ai_enabled: false })),
+      fetchJson<{ ai_enabled: boolean; model?: string | null }>("/ai/status", undefined, activeToken).catch(() => ({ ai_enabled: false, model: null })),
     ]);
     setTransactions(sortTransactions(remoteTransactions.map(normalizeRemoteTransaction)));
     setInsights(remoteInsights);
     setAiEnabled(status.ai_enabled);
+    setAiModel(status.model ?? null);
   }
 
   async function refreshInsights(activeToken = token) {
@@ -1326,6 +1329,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         loading,
         backendStatus,
         aiEnabled,
+        aiModel,
         isAuthenticated,
         token,
         transactions,

@@ -69,8 +69,12 @@ app.include_router(users_routes.router)
 
 
 @app.get("/health")
-def healthcheck():
-    return {"status": "ok"}
+def healthcheck(details: bool = False):
+    if not details:
+        return {"status": "ok"}
+    # Reports which AI model is active without exposing any secret
+    from .services.openai_service import ai_status
+    return {"status": "ok", "ai": ai_status()}
 
 
 @app.on_event("startup")

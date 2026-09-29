@@ -40,7 +40,7 @@ const SUGGESTED_QUESTIONS = [
 ];
 
 export function AIInsights() {
-  const { insights, transactions, profile, formatMoney, askAssistant, aiEnabled, backendStatus } = useFinance();
+  const { insights, transactions, profile, formatMoney, askAssistant, aiEnabled, aiModel, backendStatus } = useFinance();
   const chart = useChartTheme();
   const [scope, setScope] = useState<"month" | "all">("month");
   const [chat, setChat] = useState<Array<ChatTurn & { source?: string }>>([
@@ -113,7 +113,7 @@ export function AIInsights() {
           </div>
         </div>
         <span className={`rounded-full px-3 py-1 text-xs font-medium ${aiEnabled ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
-          {backendStatus !== "connected" ? "Offline analysis" : aiEnabled ? "AI model connected" : "Smart rules engine (add OPENAI_API_KEY for full AI)"}
+          {backendStatus !== "connected" ? "Offline analysis" : aiEnabled ? `AI · ${aiModel ?? "connected"}` : "Smart rules engine (add OPENAI_API_KEY for full AI)"}
         </span>
       </motion.div>
 
