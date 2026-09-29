@@ -153,6 +153,15 @@ export interface ChatTurn {
   content: string;
 }
 
+export interface OtpChallenge {
+  challengeId: string;
+  email: string;
+  purpose: "register" | "login";
+  expiresIn: number;
+  resendIn: number;
+  attemptsLeft: number;
+}
+
 export interface UserCredentials {
   name?: string;
   email: string;
@@ -199,8 +208,10 @@ interface FinanceContextValue {
   updateProfile: (updates: Partial<ProfileData>) => Promise<Result>;
   askAssistant: (message: string, history: ChatTurn[]) => Promise<{ reply: string; source: "ai" | "rules" | "local" }>;
   parseQuickAdd: (text: string) => Promise<Result<QuickAddDraft>>;
-  login: (payload: UserCredentials) => Promise<Result>;
-  register: (payload: UserCredentials) => Promise<Result>;
+  login: (payload: UserCredentials) => Promise<Result<OtpChallenge>>;
+  register: (payload: UserCredentials) => Promise<Result<OtpChallenge>>;
+  verifyOtp: (challengeId: string, code: string) => Promise<Result>;
+  resendOtp: (challengeId: string) => Promise<Result<OtpChallenge>>;
   logout: () => void;
   reconnect: () => Promise<void>;
   refreshRemoteData: () => Promise<void>;
@@ -787,11 +798,40 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     await bootstrap(token);
   }
 
-  async function authenticate(path: string, body: Record<string, unknown>, fallback: string): Promise<Result> {
+  type RemoteChallenge = { challenge_id: string; email: string; purpose: OtpChallenge["purpose"]; expires_in: number; resend_in: number; attempts_left: number };
+
+  function toChallenge(remote: RemoteChallenge): OtpChallenge {
+    return {
+      challengeId: remote.challenge_id,
+      email: remote.email,
+      purpose: remote.purpose,
+      expiresIn: remote.expires_in,
+      resendIn: remote.resend_in,
+      attemptsLeft: remote.attempts_left,
+    };
+  }
+
+  /** Step 1 of sign-in/sign-up: the server checks the details and emails a one-time code. */
+  async function startAuth(path: string, body: Record<string, unknown>, fallback: string): Promise<Result<OtpChallenge>> {
     try {
-      const response = await fetchJson<{ access_token: string; user: RemoteUser }>(path, {
+      const response = await fetchJson<RemoteChallenge>(path, { method: "POST", body: JSON.stringify(body) });
+      setBackendStatus("connected");
+      return { ok: true, data: toChallenge(response) };
+    } catch (error) {
+      return { ok: false, error: errorMessage(error, fallback) };
+    }
+  }
+
+  async function resendOtp(challengeId: string): Promise<Result<OtpChallenge>> {
+    return startAuth("/auth/resend-otp", { challenge_id: challengeId }, "Unable to resend the code");
+  }
+
+  /** Step 2: exchange the emailed code for a session. */
+  async function verifyOtp(challengeId: string, code: string): Promise<Result> {
+    try {
+      const response = await fetchJson<{ access_token: string; user: RemoteUser }>("/auth/verify-otp", {
         method: "POST",
-        body: JSON.stringify(body),
+        body: JSON.stringify({ challenge_id: challengeId, code }),
       });
       setBackendStatus("connected");
       setToken(response.access_token);
@@ -801,17 +841,17 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       await loadRemote(response.access_token).catch(() => undefined);
       return { ok: true };
     } catch (error) {
-      return { ok: false, error: errorMessage(error, fallback) };
+      return { ok: false, error: errorMessage(error, "Unable to verify the code") };
     }
   }
 
   async function login(payload: UserCredentials) {
-    return authenticate("/auth/login", { email: payload.email.trim(), password: payload.password }, "Unable to sign in");
+    return startAuth("/auth/login", { email: payload.email.trim(), password: payload.password }, "Unable to sign in");
   }
 
   async function register(payload: UserCredentials) {
     const country = payload.country || inferCountryFromBrowser();
-    return authenticate("/auth/register", {
+    return startAuth("/auth/register", {
       name: payload.name?.trim() || "New User",
       email: payload.email.trim(),
       password: payload.password,
@@ -1166,6 +1206,8 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         parseQuickAdd,
         login,
         register,
+        verifyOtp,
+        resendOtp,
         logout,
         reconnect,
         refreshRemoteData,

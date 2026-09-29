@@ -23,6 +23,19 @@ npm install
 npm run dev                 # set VITE_API_URL if the API isn't on http://127.0.0.1:8000
 ```
 
+## Email verification (OTP)
+
+Sign-up and sign-in are two steps: after the email and password check out, a 6-digit code is emailed and must be entered to finish. Codes expire after 10 minutes, allow 5 attempts, can be resent after 30 seconds, and are capped at 10 per email per hour. They're stored only as keyed hashes. A new account is created only once its code is verified.
+
+Configure outgoing mail on the backend (Gmail example):
+
+```
+SMTP_USER=you@gmail.com
+SMTP_PASSWORD=<16-character App Password>   # Google Account → Security → 2-Step Verification → App passwords
+```
+
+Locally, if SMTP isn't configured, codes are printed to the backend console. In production (Vercel) the server refuses to sign anyone in without working email rather than skipping verification.
+
 ## AI features
 
 Every AI feature uses OpenAI when `OPENAI_API_KEY` is set (default model `gpt-4o-mini`). Without a key it falls back to a local rules engine, so the app stays fully usable.

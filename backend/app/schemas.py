@@ -38,6 +38,25 @@ class LoginRequest(BaseModel):
         return value.lower()
 
 
+class OtpChallengeOut(BaseModel):
+    otp_required: bool = True
+    challenge_id: str
+    email: str
+    purpose: str
+    expires_in: int
+    resend_in: int
+    attempts_left: int
+
+
+class VerifyOtpRequest(BaseModel):
+    challenge_id: str = Field(..., min_length=10, max_length=64)
+    code: str = Field(..., pattern=r"^\s*\d{6}\s*$")
+
+
+class ResendOtpRequest(BaseModel):
+    challenge_id: str = Field(..., min_length=10, max_length=64)
+
+
 class UserOut(BaseModel):
     id: int
     name: str

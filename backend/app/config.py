@@ -32,6 +32,21 @@ class Settings:
 
     TESSERACT_CMD: str = os.getenv("TESSERACT_CMD", "")
 
+    # Outgoing email for OTP codes (defaults target Gmail SMTP with an App Password)
+    SMTP_HOST: str = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER: str = os.getenv("SMTP_USER", "")
+    # Google shows App Passwords with spaces ("abcd efgh ijkl mnop"); SMTP wants them without
+    SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "").replace(" ", "")
+    EMAIL_FROM: str = os.getenv("EMAIL_FROM", "") or os.getenv("SMTP_USER", "")
+    EMAIL_FROM_NAME: str = os.getenv("EMAIL_FROM_NAME", "FinanceAI")
+
+    OTP_TTL_MINUTES: int = int(os.getenv("OTP_TTL_MINUTES", "10"))
+    OTP_MAX_ATTEMPTS: int = int(os.getenv("OTP_MAX_ATTEMPTS", "5"))
+    OTP_RESEND_COOLDOWN_SECONDS: int = int(os.getenv("OTP_RESEND_COOLDOWN_SECONDS", "30"))
+    OTP_MAX_RESENDS: int = int(os.getenv("OTP_MAX_RESENDS", "5"))
+    OTP_MAX_PER_HOUR: int = int(os.getenv("OTP_MAX_PER_HOUR", "10"))
+
     UPLOAD_DIR: str = os.getenv("UPLOAD_DIR") or ("/tmp/uploads" if IS_SERVERLESS else os.path.join(os.getcwd(), "uploads"))
 
 

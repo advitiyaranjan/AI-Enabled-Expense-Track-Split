@@ -2,13 +2,15 @@ import { useState } from "react";
 import { Navigate } from "react-router";
 import { Globe2, Lock, Mail, MapPin, Phone, TrendingUp, User } from "lucide-react";
 import { motion } from "motion/react";
-import { COUNTRIES as countries, getCountryConfig, useFinance } from "../lib/finance";
+import { OtpStep } from "../components/OtpStep";
+import { COUNTRIES as countries, getCountryConfig, useFinance, type OtpChallenge } from "../lib/finance";
 
 export function AuthPage() {
   const { isAuthenticated, login, register, loading, backendStatus, reconnect } = useFinance();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [challenge, setChallenge] = useState<OtpChallenge | null>(null);
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -32,7 +34,9 @@ export function AuthPage() {
     setError("");
     const action = mode === "login" ? login : register;
     const result = await action(form);
-    if (!result.ok) {
+    if (result.ok && result.data) {
+      setChallenge(result.data);
+    } else {
       setError(result.error ?? "Something went wrong");
     }
     setSubmitting(false);
@@ -77,6 +81,17 @@ export function AuthPage() {
         </motion.div>
 
         <motion.div initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} className="rounded-[2rem] border border-border bg-card p-8 shadow-2xl shadow-black/20">
+          {challenge ? (
+            <OtpStep
+              challenge={challenge}
+              onChallenge={setChallenge}
+              onBack={() => {
+                setChallenge(null);
+                setError("");
+              }}
+            />
+          ) : (
+          <>
           <div className="mb-6 flex gap-2 rounded-2xl bg-muted/40 p-1">
             {(["login", "register"] as const).map((value) => (
               <button
@@ -180,9 +195,12 @@ export function AuthPage() {
               disabled={submitting || !form.email || !form.password || (mode === "register" && !form.name)}
               className="w-full rounded-2xl bg-primary px-5 py-4 font-medium text-primary-foreground transition-colors hover:bg-primary-glow disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {submitting ? "Please wait..." : mode === "login" ? "Sign In" : "Create Account"}
+              {submitting ? "Sending code..." : mode === "login" ? "Continue" : "Create Account"}
             </button>
+            <p className="text-center text-xs text-muted-foreground">We'll email you a one-time code to verify it's you.</p>
           </form>
+          </>
+          )}
         </motion.div>
       </div>
     </div>

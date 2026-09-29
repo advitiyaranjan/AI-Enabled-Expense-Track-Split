@@ -74,3 +74,20 @@ class ExpenseSplit(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     amount_owed = Column(Numeric(12, 2), nullable=False)
     is_settled = Column(Boolean, default=False)
+
+
+class EmailOTP(Base):
+    """A pending email verification: sign-up data or a password-verified login waiting for its code."""
+    __tablename__ = "email_otps"
+    id = Column(String(64), primary_key=True)  # random, unguessable challenge id
+    email = Column(String, index=True, nullable=False)
+    purpose = Column(String(16), nullable=False)  # register | login
+    code_hash = Column(String(64), nullable=False)
+    payload = Column(JSON, nullable=True)  # pending sign-up fields (password already hashed)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    attempts = Column(Integer, default=0, nullable=False)
+    resends = Column(Integer, default=0, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    last_sent_at = Column(DateTime, nullable=False)
+    consumed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
